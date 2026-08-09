@@ -4,6 +4,12 @@ All notable changes to AI Quota Deck are documented here.
 
 ---
 
+## v0.1.1 - 2026-08-09
+
+- Fixed reinstalling or updating the app without creating the **AI Quota Deck** desktop shortcut.
+
+---
+
 ## v0.1.0 - 2026-08-09
 
 - Initial Windows release with Claude, Codex, Gemini, and Grok quota cards.

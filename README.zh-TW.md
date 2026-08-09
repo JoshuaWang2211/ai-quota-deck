@@ -42,13 +42,13 @@
 
 **系統需求：Windows 10 或 11。**
 
-1. [點此下載最新安裝檔](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.1.0_x64-setup.exe)。
+1. [點此下載最新安裝檔](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.1.1_x64-setup.exe)。
 2. 執行安裝檔，再啟動 **AI Quota Deck**。
 3. 關閉視窗會回到系統匣；左鍵點擊系統匣圖示即可重新開啟。
 
-**Codex：**只需在 Codex Desktop 登入即可。
+**Codex：** 只需在 Codex Desktop 登入即可。
 
-**Claude：**若沒有偵測到 Claude，請先安裝 Claude Code，在終端機執行一次 `claude` 並完成登入；之後不必讓 CLI 持續執行。
+**Claude：** 若沒有偵測到 Claude，請先安裝 Claude Code，在終端機執行一次 `claude` 並完成登入；之後不必讓 CLI 持續執行。
 
 ---
 
@@ -88,15 +88,15 @@ Gemini 與 Grok 必須透過隨附的 **AI Quota Deck Browser Bridge** 從瀏覽
 
 ## 疑難排解
 
-**看不到 Gemini 或 Grok：**確認 Bridge 已啟用、曾點擊一次工具列圖示，且已開啟登入中的服務分頁。
+**看不到 Gemini 或 Grok：** 確認 Bridge 已啟用、曾點擊一次工具列圖示，且已開啟登入中的服務分頁。
 
-**瀏覽器資料過期：**打開對應分頁並等待最多約三分鐘；瀏覽器、Bridge、分頁與系統匣 App 都必須正在執行。
+**瀏覽器資料過期：** 打開對應分頁並等待最多約三分鐘；瀏覽器、Bridge、分頁與系統匣 App 都必須正在執行。
 
-**Claude 顯示 rate limit：**等待畫面上的冷卻倒數。期限會跨 App 重啟保留，已有的成功資料則會以 `cached` 顯示。
+**Claude 顯示 rate limit：** 等待畫面上的冷卻倒數。期限會跨 App 重啟保留，已有的成功資料則會以 `cached` 顯示。
 
-**Claude 在閒置或鎖定時沒有更新：**這是刻意的節流；回來操作後通常會很快補查，但既有的 rate-limit 冷卻仍優先。
+**Claude 在閒置或鎖定時沒有更新：** 這是刻意的節流；回來操作後通常會很快補查，但既有的 rate-limit 冷卻仍優先。
 
-**Windows 顯示未知發行者：**v0.1.0 尚未加入程式碼簽章，請只從本專案的 GitHub Releases 頁面下載。
+**Windows 顯示未知發行者：** 目前版本尚未加入程式碼簽章，請只從本專案的 GitHub Releases 頁面下載。
 
 ---
 

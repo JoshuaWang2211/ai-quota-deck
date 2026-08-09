@@ -2,14 +2,22 @@
 !define DECK_SHORTCUT_NAME "AI Quota Deck"
 
 !macro RenameDeckShortcuts
-  ${If} ${FileExists} "$DESKTOP\${DECK_OLD_SHORTCUT_NAME}.lnk"
-    Delete "$DESKTOP\${DECK_SHORTCUT_NAME}.lnk"
-    Rename "$DESKTOP\${DECK_OLD_SHORTCUT_NAME}.lnk" "$DESKTOP\${DECK_SHORTCUT_NAME}.lnk"
-  ${EndIf}
-
   ${If} ${FileExists} "$SMPROGRAMS\${DECK_OLD_SHORTCUT_NAME}.lnk"
     Delete "$SMPROGRAMS\${DECK_SHORTCUT_NAME}.lnk"
     Rename "$SMPROGRAMS\${DECK_OLD_SHORTCUT_NAME}.lnk" "$SMPROGRAMS\${DECK_SHORTCUT_NAME}.lnk"
+  ${EndIf}
+!macroend
+
+!macro EnsureDeckDesktopShortcut
+  ; Tauri deliberately skips its desktop-shortcut helper in update mode. That
+  ; leaves users who did not already have a shortcut unable to add one by
+  ; reinstalling. Honour the explicit /NS opt-out, but otherwise ensure the
+  ; user-facing shortcut exists after both a fresh install and an update.
+  ${If} $NoShortcutMode <> 1
+    Delete "$DESKTOP\${DECK_OLD_SHORTCUT_NAME}.lnk"
+    Delete "$DESKTOP\${DECK_SHORTCUT_NAME}.lnk"
+    CreateShortcut "$DESKTOP\${DECK_SHORTCUT_NAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
+    !insertmacro SetLnkAppUserModelId "$DESKTOP\${DECK_SHORTCUT_NAME}.lnk"
   ${EndIf}
 !macroend
 
@@ -17,6 +25,7 @@
 ; desktop shortcuts are created on the finish page and are handled by .onGUIEnd.
 !macro NSIS_HOOK_POSTINSTALL
   !insertmacro RenameDeckShortcuts
+  !insertmacro EnsureDeckDesktopShortcut
 !macroend
 
 Function .onGUIEnd

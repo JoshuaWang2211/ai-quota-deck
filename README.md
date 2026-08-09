@@ -42,7 +42,7 @@ Other features:
 
 **Requires Windows 10 or 11.**
 
-1. [Download the latest installer](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.1.0_x64-setup.exe).
+1. [Download the latest installer](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.1.1_x64-setup.exe).
 2. Run it, then launch **AI Quota Deck**.
 3. Close the window to return it to the system tray; left-click the tray icon to reopen it.
 
@@ -96,7 +96,7 @@ After updating AI Quota Deck, restart the browser so it reloads the bundled brid
 
 **Claude did not update while idle or locked:** this is intentional. It normally checks again shortly after you return, unless a rate-limit cooldown is still active.
 
-**Windows reports an unknown publisher:** v0.1.0 is not code-signed. Download it only from this project's GitHub Releases page.
+**Windows reports an unknown publisher:** current releases are not code-signed. Download them only from this project's GitHub Releases page.
 
 ---
 
