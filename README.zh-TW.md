@@ -1,6 +1,6 @@
 # 📊 AI Quota Deck
 
-集中查看 Claude、Codex、Gemini 與 Grok 使用量的 Windows 系統匣工具。
+集中查看 Claude Code、Codex、Gemini 與 Grok 使用額度的 Windows 系統匣工具。
 
 📘 [English](./README.md)
 
@@ -21,7 +21,7 @@
 
 | 服務 | 額度週期 | 設定方式 |
 |---|---|---|
-| **Claude Code** | 5 小時、每週，以及可用的模型專屬額度 | 登入 Claude Code |
+| **Claude** | 5 小時、每週，以及可用的模型專屬額度 | 登入 Claude Code |
 | **Codex** | Free 顯示每月；Plus 顯示每週 | 登入 Codex Desktop |
 | **Gemini** | 5 小時、每週 | [進階 Browser Bridge 設定](#進階gemini-與-grok) |
 | **Grok** | 每週與各產品細目；免費帳號則顯示查詢額度 | Browser Bridge，或 Grok Build 備援 |
@@ -48,7 +48,7 @@
 
 **Codex：** 只需在 Codex Desktop 登入即可。
 
-**Claude：** 若沒有偵測到 Claude，請先安裝 Claude Code，在終端機執行一次 `claude` 並完成登入；之後不必讓 CLI 持續執行。
+**Claude：** 若沒有偵測到 Claude Code，請先安裝它，在終端機執行一次 `claude` 並完成登入；之後不必讓 CLI 持續執行。
 
 ---
 
@@ -56,7 +56,7 @@
 
 > 這段設定比較麻煩，需要開啟 Chromium 開發人員模式、手動載入未封裝擴充功能，並保留已登入的 Gemini 或 Grok 分頁。
 
-Gemini 與 Grok 必須透過隨附的 **AI Quota Deck Browser Bridge** 從瀏覽器讀取用量。若只使用 Claude 與 Codex，可以跳過本節。
+Gemini 與 Grok 必須透過隨附的 **AI Quota Deck Browser Bridge** 從瀏覽器讀取用量。若只使用 Claude Code 與 Codex，可以跳過本節。
 
 - Gemini 必須安裝 Bridge。
 - Grok 優先使用 Bridge，也可退回讀取已登入的 Grok Build CLI。

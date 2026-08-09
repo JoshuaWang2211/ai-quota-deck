@@ -1,6 +1,6 @@
 # 📊 AI Quota Deck
 
-A Windows tray dashboard for Claude, Codex, Gemini, and Grok usage limits.
+A Windows tray dashboard for Claude Code, Codex, Gemini, and Grok usage limits.
 
 📘 [繁體中文](./README.zh-TW.md)
 
@@ -21,7 +21,7 @@ The full view includes reset times, pace indicators, plan badges, and cached-dat
 
 | Provider | Usage windows | Setup |
 |---|---|---|
-| **Claude Code** | 5-hour, weekly, and model-specific limits when available | Sign in to Claude Code |
+| **Claude** | 5-hour, weekly, and model-specific limits when available | Sign in to Claude Code |
 | **Codex** | Monthly (Free) or weekly (Plus), depending on the account | Sign in to Codex Desktop |
 | **Gemini** | 5-hour and weekly | [Advanced Browser Bridge setup](#advanced-gemini-and-grok) |
 | **Grok** | Weekly and product breakdown; free query limits when applicable | Browser Bridge, or Grok Build fallback |
@@ -48,7 +48,7 @@ Other features:
 
 **Codex:** sign in to Codex Desktop.
 
-**Claude:** if Claude is not detected, install Claude Code, run `claude` once in a terminal, and complete sign-in. The CLI does not need to remain open.
+**Claude:** if Claude Code is not detected, install it, run `claude` once in a terminal, and complete sign-in. The CLI does not need to remain open.
 
 ---
 
@@ -56,7 +56,7 @@ Other features:
 
 > This setup is more involved. It requires Chromium Developer mode, a manually loaded unpacked extension, and a signed-in Gemini or Grok tab.
 
-Gemini and Grok usage is read from a browser tab through the bundled **AI Quota Deck Browser Bridge**. Skip this section if you only use Claude and Codex.
+Gemini and Grok usage is read from a browser tab through the bundled **AI Quota Deck Browser Bridge**. Skip this section if you only use Claude Code and Codex.
 
 - Gemini requires the bridge.
 - Grok prefers the bridge but can fall back to a signed-in Grok Build CLI.
