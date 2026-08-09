@@ -4,9 +4,16 @@ All notable changes to AI Quota Deck are documented here.
 
 ---
 
+## v0.1.2 - 2026-08-09
+
+- Fixed premature and duplicate desktop shortcuts. The installer now creates one **AI Quota Deck** shortcut only when the finish-page option is selected.
+- Standardized the installer, install directory, Start menu, and uninstall entry on the **AI Quota Deck** product name.
+
+---
+
 ## v0.1.1 - 2026-08-09
 
-- Fixed reinstalling or updating the app without creating the **AI Quota Deck** desktop shortcut.
+- Added installer handling intended to restore a missing **AI Quota Deck** desktop shortcut during reinstalls and updates.
 
 ---
 

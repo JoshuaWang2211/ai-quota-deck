@@ -3,14 +3,15 @@ import fs from "node:fs";
 import test from "node:test";
 
 const hook = fs.readFileSync(new URL("../src-tauri/installer-hooks.nsh", import.meta.url), "utf8");
+const config = JSON.parse(
+  fs.readFileSync(new URL("../src-tauri/tauri.conf.json", import.meta.url), "utf8"),
+);
 
-test("NSIS installs the user-facing desktop shortcut on fresh installs and updates", () => {
-  assert.match(hook, /\$NoShortcutMode <> 1/);
-  assert.match(
-    hook,
-    /CreateShortcut "\$DESKTOP\\\$\{DECK_SHORTCUT_NAME\}\.lnk" "\$INSTDIR\\\$\{MAINBINARYNAME\}\.exe"/,
-  );
-  assert.match(hook, /!macro NSIS_HOOK_POSTINSTALL[\s\S]*!insertmacro EnsureDeckDesktopShortcut/);
-  assert.match(hook, /Function \.onGUIEnd[\s\S]*!insertmacro RenameDeckShortcuts/);
-  assert.doesNotMatch(hook, /Function \.onGUIEnd[\s\S]*!insertmacro EnsureDeckDesktopShortcut/);
+test("only Tauri's finish-page action creates the desktop shortcut", () => {
+  assert.equal(config.productName, "AI Quota Deck");
+  assert.equal(config.bundle.windows.nsis.template, undefined);
+  assert.doesNotMatch(hook, /CreateShortcut/);
+  assert.doesNotMatch(hook, /EnsureDeckDesktopShortcut/);
+  assert.match(hook, /!macro NSIS_HOOK_POSTINSTALL/);
+  assert.match(hook, /Delete "\$DESKTOP\\\$\{DECK_OLD_SHORTCUT_NAME\}\.lnk"/);
 });
