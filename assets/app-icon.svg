@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>AI Quota Deck Q Gauge</title>
+  <g fill="none" stroke-linecap="round">
+    <circle
+      cx="128"
+      cy="128"
+      r="82"
+      stroke="#16324f"
+      stroke-width="36"
+      stroke-dasharray="105 24"
+      transform="rotate(-90 128 128)"
+    />
+    <circle
+      cx="128"
+      cy="128"
+      r="82"
+      stroke="#3498db"
+      stroke-width="24"
+      stroke-dasharray="105 24"
+      transform="rotate(-90 128 128)"
+    />
+
+    <path d="M151 151 207 207" stroke="#16324f" stroke-width="36" />
+    <path d="M151 151 207 207" stroke="#f1c40f" stroke-width="22" />
+
+    <path d="M174 68 194 48" stroke="#16324f" stroke-width="26" />
+    <path d="M174 68 194 48" stroke="#f1c40f" stroke-width="14" />
+  </g>
+</svg>

@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Quota Deck</title>
+    <script>
+      // Ahead of first paint, so opening the panel never flashes the wrong
+      // theme at you. main.js owns every change after this.
+      (() => {
+        const stored = localStorage.getItem("quota-deck-theme");
+        document.documentElement.dataset.theme =
+          stored === "light" || stored === "dark"
+            ? stored
+            : matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+        document.documentElement.dataset.layout =
+          localStorage.getItem("quota-deck-mini-mode") === "true" ? "mini" : "full";
+      })();
+    </script>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="deck">
+      <header class="deck-head">
+        <span class="wordmark">Quota Deck</span>
+
+        <div class="refresh-status" aria-live="polite">
+          <span id="updated">Last updated: —</span>
+          <span id="countdown">Refresh scheduled</span>
+        </div>
+
+        <button
+          class="tool"
+          id="mini-mode"
+          type="button"
+          title="Switch to mini mode"
+          aria-pressed="false"
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <span id="mini-mode-label">Mini</span>
+        </button>
+
+        <button class="tool" id="theme" type="button" title="Switch theme">
+          <svg class="icon-to-dark" viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              d="M13 9.6A5.4 5.4 0 0 1 6.4 3 5.6 5.6 0 1 0 13 9.6Z"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.3"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <svg class="icon-to-light" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.3" />
+            <path
+              d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3.1 3.1l1.1 1.1M11.8 11.8l1.1 1.1M12.9 3.1l-1.1 1.1M4.2 11.8l-1.1 1.1"
+              stroke="currentColor"
+              stroke-width="1.3"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
+
+      </header>
+
+      <main class="providers" id="providers"></main>
+
+      <section class="provider-controls" id="provider-controls"></section>
+
+      <footer class="deck-foot">
+        <span>v0.1.0</span>
+        <a
+          href="https://github.com/JoshuaWang2211/ai-quota-deck"
+          target="_blank"
+          rel="noopener noreferrer"
+        >GitHub Repo</a>
+      </footer>
+    </div>
+
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

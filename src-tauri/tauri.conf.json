@@ -1,0 +1,50 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ai-quota-deck",
+  "version": "0.1.0",
+  "identifier": "me.joshuawang.aiquotadeck",
+  "build": {
+    "frontendDist": "../src"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "AI Quota Deck",
+        "width": 440,
+        "height": 790,
+        "resizable": true,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "windows": {
+      "nsis": {
+        "installerHooks": "installer-hooks.nsh"
+      }
+    },
+    "resources": {
+      "../browser-bridge/manifest.json": "browser-bridge/manifest.json",
+      "../browser-bridge/src/background.js": "browser-bridge/src/background.js",
+      "../browser-bridge/src/gemini-interceptor.js": "browser-bridge/src/gemini-interceptor.js",
+      "../browser-bridge/src/gemini-parser.js": "browser-bridge/src/gemini-parser.js",
+      "../browser-bridge/src/gemini.js": "browser-bridge/src/gemini.js",
+      "../browser-bridge/src/grok-parser.js": "browser-bridge/src/grok-parser.js",
+      "../browser-bridge/src/grok.js": "browser-bridge/src/grok.js"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}
