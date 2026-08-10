@@ -10,6 +10,8 @@ A Windows tray dashboard for Claude Code, Codex, Gemini, and Grok usage limits.
 
 <p align="center">
   <img src="./assets/screenshot.png" alt="AI Quota Deck full dashboard in dark mode" width="420">
+  <img src="./assets/screenshot2.png" alt="AI Quota Deck widget view" width="220">
+  <img src="./assets/screenshot3.png" alt="AI Quota Deck strip view" width="360">
 </p>
 
 The dashboard includes reset times, pace indicators, plan badges, and cached-data status. Widget and Strip views keep the essential color-coded percentages in sight.

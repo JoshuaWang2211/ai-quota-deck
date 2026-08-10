@@ -9,7 +9,9 @@
 ## 畫面預覽
 
 <p align="center">
-  <img src="./assets/screenshot.png" alt="AI Quota Deck 深色完整模式" width="420">
+  <img src="./assets/screenshot.png" alt="AI Quota Deck 深色 Dashboard" width="420">
+  <img src="./assets/screenshot2.png" alt="AI Quota Deck Widget" width="220">
+  <img src="./assets/screenshot3.png" alt="AI Quota Deck Strip" width="360">
 </p>
 
 Dashboard 會顯示重置時間、使用速度、方案與快取狀態；Widget 與 Strip 則保留最重要的百分比，並依用量顯示綠、黃、紅色。
