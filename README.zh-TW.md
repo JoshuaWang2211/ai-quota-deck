@@ -8,10 +8,19 @@
 
 ## 畫面預覽
 
+### Dashboard
 <p align="center">
-  <img src="./assets/screenshot.png" alt="AI Quota Deck 深色 Dashboard" width="420">
-  <img src="./assets/screenshot2.png" alt="AI Quota Deck Widget" width="220">
-  <img src="./assets/screenshot3.png" alt="AI Quota Deck Strip" width="360">
+  <img src="./assets/screenshot.png" alt="AI Quota Deck 深色 Dashboard" width="500">
+</p>
+
+### Widget
+<p align="center">
+  <img src="./assets/screenshot2.png" alt="AI Quota Deck Widget" width="320">
+</p>
+
+### Strip
+<p align="center">
+  <img src="./assets/screenshot3.png" alt="AI Quota Deck Strip" width="500">
 </p>
 
 Dashboard 會顯示重置時間、使用速度、方案與快取狀態；Widget 與 Strip 則保留最重要的百分比，並依用量顯示綠、黃、紅色。
@@ -97,6 +106,15 @@ Gemini 與 Grok 必須透過隨附的 **AI Quota Deck Browser Bridge** 從瀏覽
 要持續更新，Bridge 與對應的登入分頁都必須保留；背景分頁即可。瀏覽器／分頁關閉、帳號登出或電腦睡眠期間無法產生新資料，面板會保留最後一次結果並標示 `cached`，喚醒或解鎖後再補抓。
 
 更新 AI Quota Deck 後，請重開瀏覽器，讓它載入新版 Bridge。
+
+---
+
+## 獨立瀏覽器擴充功能
+
+若您只需要查看 Gemini 或 Grok 的用量，不需要執行桌面 App，可以使用我製作的 Chrome 擴充功能：
+
+- **[Gemini Usage Monitor](https://chromewebstore.google.com/detail/cdepnbhodggenlkdeelnocfckdendhad?utm_source=item-share-cb)**
+- **[Grok Usage Watch](https://chromewebstore.google.com/detail/bmpboaihdkpkjehbceegdmndkonlpdge?utm_source=item-share-cb)**
 
 ---
 

@@ -8,10 +8,19 @@ A Windows tray dashboard for Claude Code, Codex, Gemini, and Grok usage limits.
 
 ## Screenshots
 
+### Dashboard
 <p align="center">
-  <img src="./assets/screenshot.png" alt="AI Quota Deck full dashboard in dark mode" width="420">
-  <img src="./assets/screenshot2.png" alt="AI Quota Deck widget view" width="220">
-  <img src="./assets/screenshot3.png" alt="AI Quota Deck strip view" width="360">
+  <img src="./assets/screenshot.png" alt="AI Quota Deck full dashboard in dark mode" width="500">
+</p>
+
+### Widget
+<p align="center">
+  <img src="./assets/screenshot2.png" alt="AI Quota Deck widget view" width="320">
+</p>
+
+### Strip
+<p align="center">
+  <img src="./assets/screenshot3.png" alt="AI Quota Deck strip view" width="500">
 </p>
 
 The dashboard includes reset times, pace indicators, plan badges, and cached-data status. Widget and Strip views keep the essential color-coded percentages in sight.
@@ -97,6 +106,15 @@ The card normally appears within about three minutes or when the deck is brought
 The bridge and a matching signed-in tab must remain available for fresh readings. Background tabs are fine, but the bridge cannot update while the browser or tab is closed, the account is signed out, or the computer is asleep. The deck keeps the last reading as `cached` and requests a new one after wake or unlock.
 
 After updating AI Quota Deck, restart the browser so it reloads the bundled bridge files.
+
+---
+
+## Standalone Browser Extensions
+
+If you only need to check Gemini or Grok usage without running the desktop app, you can use these standalone Chrome extensions:
+
+- **[Gemini Usage Monitor](https://chromewebstore.google.com/detail/cdepnbhodggenlkdeelnocfckdendhad?utm_source=item-share-cb)**
+- **[Grok Usage Watch](https://chromewebstore.google.com/detail/bmpboaihdkpkjehbceegdmndkonlpdge?utm_source=item-share-cb)**
 
 ---
 
