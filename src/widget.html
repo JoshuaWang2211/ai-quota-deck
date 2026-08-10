@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Quota Deck Widget</title>
+    <script>
+      (() => {
+        const stored = localStorage.getItem("quota-deck-theme");
+        document.documentElement.dataset.theme =
+          stored === "light" || stored === "dark"
+            ? stored
+            : matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+      })();
+    </script>
+    <link rel="stylesheet" href="widget.css" />
+  </head>
+  <body>
+    <section class="widget" aria-label="AI quota widget">
+      <header class="widget-head" id="widget-drag-handle">
+        <span class="widget-title">Quota Deck</span>
+        <span class="widget-status" id="widget-status">Waiting for dashboard…</span>
+        <div class="widget-controls">
+          <button id="open-dashboard" type="button" title="Open dashboard" aria-label="Open dashboard">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="2.5" y="2.5" width="11" height="11" rx="2" />
+              <path d="M5 6h6M5 9h4" />
+            </svg>
+          </button>
+          <button
+            id="lock-widget"
+            type="button"
+            title="Lock widget position"
+            aria-label="Lock widget"
+          >
+            <svg class="lock-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" />
+              <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
+            </svg>
+            <svg class="unlock-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" />
+              <path d="M5.5 7V5a2.5 2.5 0 0 1 4.8-1" />
+            </svg>
+          </button>
+          <button id="hide-widget" type="button" title="Hide widget" aria-label="Hide widget">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="m4 4 8 8M12 4l-8 8" />
+            </svg>
+          </button>
+        </div>
+      </header>
+      <main class="widget-providers" id="widget-providers" aria-live="polite"></main>
+    </section>
+
+    <script type="module" src="widget.js"></script>
+  </body>
+</html>

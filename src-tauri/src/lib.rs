@@ -7,22 +7,22 @@ mod grok;
 mod native_host;
 mod quota;
 mod startup;
+mod widget;
 
 use quota::ProviderQuota;
-use std::sync::Mutex;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, LogicalSize, Manager, PhysicalPosition, PhysicalSize, State, WebviewWindow,
-    WindowEvent,
+    AppHandle, Manager, State, WebviewWindow, WindowEvent,
 };
 
 const MAIN_WINDOW: &str = "main";
-const MINI_CONTENT_WIDTH: f64 = 300.0;
 
-#[derive(Default)]
-struct WindowModeState {
-    normal_bounds: Mutex<Option<(PhysicalSize<u32>, PhysicalPosition<i32>)>>,
+#[cfg(desktop)]
+struct WidgetMenuState {
+    widget: CheckMenuItem<tauri::Wry>,
+    strip: CheckMenuItem<tauri::Wry>,
+    locked: CheckMenuItem<tauri::Wry>,
 }
 
 pub fn run_native_host_if_requested() -> bool {
@@ -77,53 +77,112 @@ fn reveal_bridge_dir() -> Result<(), String> {
 }
 
 #[tauri::command]
-fn set_mini_mode(
+fn widget_preferences(
+    state: State<'_, widget::WidgetState>,
+) -> Result<widget::WidgetPreferences, String> {
+    state.snapshot()
+}
+
+#[cfg(desktop)]
+fn sync_widget_menu(app: &AppHandle, preferences: &widget::WidgetPreferences) {
+    if let Some(menu) = app.try_state::<WidgetMenuState>() {
+        let _ = menu
+            .widget
+            .set_checked(preferences.visible && !preferences.strip);
+        let _ = menu
+            .strip
+            .set_checked(preferences.visible && preferences.strip);
+        let _ = menu.locked.set_checked(preferences.locked);
+    }
+}
+
+#[cfg(not(desktop))]
+fn sync_widget_menu(_app: &AppHandle, _preferences: &widget::WidgetPreferences) {}
+
+fn update_display_mode(
+    app: &AppHandle,
+    state: &widget::WidgetState,
+    mode: &str,
+) -> Result<widget::WidgetPreferences, String> {
+    let preferences = widget::set_mode(app, state, mode)?;
+    sync_widget_menu(app, &preferences);
+    Ok(preferences)
+}
+
+fn switch_display_mode(
+    app: &AppHandle,
+    state: &widget::WidgetState,
+    mode: &str,
+) -> Result<widget::WidgetPreferences, String> {
+    let preferences = update_display_mode(app, state, mode)?;
+    if mode == "dashboard" {
+        show_dashboard(app);
+    } else if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        let _ = window.hide();
+    }
+    Ok(preferences)
+}
+
+fn update_widget_lock(
+    app: &AppHandle,
+    state: &widget::WidgetState,
+    locked: bool,
+) -> Result<widget::WidgetPreferences, String> {
+    let preferences = widget::set_locked(app, state, locked)?;
+    sync_widget_menu(app, &preferences);
+    Ok(preferences)
+}
+
+#[tauri::command]
+fn set_display_mode(
+    app: AppHandle,
+    state: State<'_, widget::WidgetState>,
+    mode: String,
+) -> Result<widget::WidgetPreferences, String> {
+    switch_display_mode(&app, &state, &mode)
+}
+
+#[tauri::command]
+fn hide_companion(
+    app: AppHandle,
+    state: State<'_, widget::WidgetState>,
+) -> Result<widget::WidgetPreferences, String> {
+    update_display_mode(&app, &state, "dashboard")
+}
+
+#[tauri::command]
+fn set_widget_locked(
+    app: AppHandle,
+    state: State<'_, widget::WidgetState>,
+    locked: bool,
+) -> Result<widget::WidgetPreferences, String> {
+    update_widget_lock(&app, &state, locked)
+}
+
+#[tauri::command]
+fn start_widget_drag(
     window: WebviewWindow,
-    state: State<'_, WindowModeState>,
-    enabled: bool,
+    state: State<'_, widget::WidgetState>,
+) -> Result<(), String> {
+    widget::start_dragging(&window, &state)
+}
+
+#[tauri::command]
+fn resize_widget(
+    window: WebviewWindow,
+    state: State<'_, widget::WidgetState>,
+    width: f64,
     height: f64,
 ) -> Result<(), String> {
-    let mut normal_bounds = state
-        .normal_bounds
-        .lock()
-        .map_err(|_| "window mode state is unavailable".to_string())?;
+    widget::resize(&window, &state, width, height)
+}
 
-    if !enabled {
-        if let Some((size, position)) = normal_bounds.take() {
-            window.set_size(size).map_err(|error| error.to_string())?;
-            window
-                .set_position(position)
-                .map_err(|error| error.to_string())?;
-        }
-        return Ok(());
+#[tauri::command]
+fn open_dashboard(app: AppHandle, state: State<'_, widget::WidgetState>) {
+    if let Err(error) = switch_display_mode(&app, &state, "dashboard") {
+        eprintln!("dashboard mode update failed: {error}");
+        show_dashboard(&app);
     }
-
-    if normal_bounds.is_none() {
-        let size = window.outer_size().map_err(|error| error.to_string())?;
-        let position = window.outer_position().map_err(|error| error.to_string())?;
-        *normal_bounds = Some((size, position));
-    }
-    drop(normal_bounds);
-
-    // The renderer measures client content, while Tauri resizes the outer
-    // window. Preserve the current frame/title-bar thickness at any DPI.
-    let scale = window.scale_factor().map_err(|error| error.to_string())?;
-    let outer = window.outer_size().map_err(|error| error.to_string())?;
-    let inner = window.inner_size().map_err(|error| error.to_string())?;
-    let frame_width = outer.width.saturating_sub(inner.width) as f64 / scale;
-    let frame_height = outer.height.saturating_sub(inner.height) as f64 / scale;
-    let content_height = if height.is_finite() {
-        height.clamp(72.0, 420.0)
-    } else {
-        180.0
-    };
-
-    window
-        .set_size(LogicalSize::new(
-            MINI_CONTENT_WIDTH + frame_width,
-            content_height + frame_height,
-        ))
-        .map_err(|error| error.to_string())
 }
 
 fn show_dashboard(app: &AppHandle) {
@@ -152,6 +211,36 @@ fn toggle_dashboard(app: &AppHandle) {
 #[cfg(desktop)]
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "Open dashboard", true, None::<&str>)?;
+    let widget_preferences = app
+        .state::<widget::WidgetState>()
+        .snapshot()
+        .unwrap_or_default();
+    let widget_visible = widget_preferences.visible && !widget_preferences.strip;
+    let strip_visible = widget_preferences.visible && widget_preferences.strip;
+    let show_widget = CheckMenuItem::with_id(
+        app,
+        "show-widget",
+        "Show widget",
+        true,
+        widget_visible,
+        None::<&str>,
+    )?;
+    let show_strip = CheckMenuItem::with_id(
+        app,
+        "show-strip",
+        "Show strip",
+        true,
+        strip_visible,
+        None::<&str>,
+    )?;
+    let widget_locked = CheckMenuItem::with_id(
+        app,
+        "widget-locked",
+        "Lock widget position",
+        true,
+        widget_preferences.locked,
+        None::<&str>,
+    )?;
     let launch_at_startup = CheckMenuItem::with_id(
         app,
         "launch-at-startup",
@@ -166,12 +255,21 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         &[
             &open,
             &PredefinedMenuItem::separator(app)?,
+            &show_widget,
+            &show_strip,
+            &widget_locked,
+            &PredefinedMenuItem::separator(app)?,
             &launch_at_startup,
             &PredefinedMenuItem::separator(app)?,
             &quit,
         ],
     )?;
     let startup_toggle = launch_at_startup.clone();
+    let _ = app.manage(WidgetMenuState {
+        widget: show_widget.clone(),
+        strip: show_strip.clone(),
+        locked: widget_locked.clone(),
+    });
 
     TrayIconBuilder::with_id("main-tray")
         .icon(app.default_window_icon().unwrap().clone())
@@ -181,6 +279,42 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(move |app, event| match event.id.as_ref() {
             "open" => show_dashboard(app),
+            "show-widget" => {
+                let state = app.state::<widget::WidgetState>();
+                if let Ok(preferences) = state.snapshot() {
+                    let active = preferences.visible && !preferences.strip;
+                    let result = if active {
+                        update_display_mode(app, &state, "dashboard")
+                    } else {
+                        switch_display_mode(app, &state, "widget")
+                    };
+                    if let Err(error) = result {
+                        eprintln!("widget mode update failed: {error}");
+                    }
+                }
+            }
+            "show-strip" => {
+                let state = app.state::<widget::WidgetState>();
+                if let Ok(preferences) = state.snapshot() {
+                    let active = preferences.visible && preferences.strip;
+                    let result = if active {
+                        update_display_mode(app, &state, "dashboard")
+                    } else {
+                        switch_display_mode(app, &state, "strip")
+                    };
+                    if let Err(error) = result {
+                        eprintln!("strip mode update failed: {error}");
+                    }
+                }
+            }
+            "widget-locked" => {
+                let state = app.state::<widget::WidgetState>();
+                if let Ok(preferences) = state.snapshot() {
+                    if let Err(error) = update_widget_lock(app, &state, !preferences.locked) {
+                        eprintln!("widget lock update failed: {error}");
+                    }
+                }
+            }
             "launch-at-startup" => {
                 let enable = !startup::enabled();
                 match startup::set_enabled(enable) {
@@ -218,11 +352,15 @@ pub fn run() {
         // already running should reveal that window, not start a second poller.
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if !startup::background_requested(&args) {
-                show_dashboard(app);
+                let state = app.state::<widget::WidgetState>();
+                if let Err(error) = switch_display_mode(app, &state, "dashboard") {
+                    eprintln!("dashboard mode update failed: {error}");
+                    show_dashboard(app);
+                }
             }
         }))
         .plugin(tauri_plugin_opener::init())
-        .manage(WindowModeState::default())
+        .manage(widget::WidgetState::load())
         .setup(|app| {
             #[cfg(desktop)]
             {
@@ -230,6 +368,10 @@ pub fn run() {
                     eprintln!("launch at startup path refresh failed: {error}");
                 }
                 build_tray(app.handle())?;
+                let widget_state = app.state::<widget::WidgetState>();
+                if let Err(error) = widget::apply(app.handle(), &widget_state) {
+                    eprintln!("widget initialization failed: {error}");
+                }
                 if let Err(error) = native_host::register() {
                     eprintln!("native host registration failed: {error}");
                 }
@@ -242,7 +384,12 @@ pub fn run() {
                 // explicit user actions, so show the dashboard. Only the Run
                 // key passes --hidden and starts quietly in the tray.
                 if !startup::is_background_launch() {
-                    show_dashboard(app.handle());
+                    if let Err(error) =
+                        switch_display_mode(app.handle(), &widget_state, "dashboard")
+                    {
+                        eprintln!("dashboard mode update failed: {error}");
+                        show_dashboard(app.handle());
+                    }
                 }
             }
 
@@ -254,11 +401,27 @@ pub fn run() {
         })
         // Closing the window returns the deck to the tray instead of exiting —
         // it has to keep polling to be worth having.
-        .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
+        .on_window_event(|window, event| match event {
+            WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
-                let _ = window.hide();
+                if window.label() == widget::WINDOW_LABEL {
+                    let state = window.state::<widget::WidgetState>();
+                    if let Err(error) =
+                        update_display_mode(window.app_handle(), &state, "dashboard")
+                    {
+                        eprintln!("widget close failed: {error}");
+                    }
+                } else {
+                    let _ = window.hide();
+                }
             }
+            WindowEvent::Moved(position) if window.label() == widget::WINDOW_LABEL => {
+                let state = window.state::<widget::WidgetState>();
+                if let Err(error) = state.remember_position(*position) {
+                    eprintln!("widget position save failed: {error}");
+                }
+            }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             claude_quota,
@@ -268,7 +431,13 @@ pub fn run() {
             system_activity,
             bridge_dir,
             reveal_bridge_dir,
-            set_mini_mode
+            widget_preferences,
+            set_display_mode,
+            hide_companion,
+            set_widget_locked,
+            start_widget_drag,
+            resize_widget,
+            open_dashboard
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

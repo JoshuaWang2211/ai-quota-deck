@@ -10,10 +10,9 @@ A Windows tray dashboard for Claude Code, Codex, Gemini, and Grok usage limits.
 
 <p align="center">
   <img src="./assets/screenshot.png" alt="AI Quota Deck full dashboard in dark mode" width="420">
-  <img src="./assets/screenshot2.png" alt="AI Quota Deck mini mode in dark mode" width="300">
 </p>
 
-The full view includes reset times, pace indicators, plan badges, and cached-data status. **Mini mode** shrinks the window to the essential percentages; values turn green, amber, or red as usage rises.
+The dashboard includes reset times, pace indicators, plan badges, and cached-data status. Widget and Strip views keep the essential color-coded percentages in sight.
 
 ---
 
@@ -30,11 +29,13 @@ Providers that are not configured stay hidden. Each provider refreshes independe
 
 Other features:
 
-- Full and Mini modes
+- Dashboard, Widget, and Strip views
+- Always-on-top widget with a remembered, lockable position
+- Compact horizontal strip that can be placed anywhere on screen
 - Light, dark, and system themes
 - Windows tray controls and optional launch at startup
 - Cached readings when a provider or browser is temporarily unavailable
-- Claude polling pauses while Windows is idle or locked and backs off safely after rate limits
+- Claude Code polling pauses while Windows is idle or locked, waits briefly after wake, and backs off safely after rate limits
 
 ---
 
@@ -42,13 +43,24 @@ Other features:
 
 **Requires Windows 10 or 11.**
 
-1. [Download the latest installer](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.1.2_x64-setup.exe).
+1. [Download the latest installer](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.2.0_x64-setup.exe).
 2. Run it, then launch **AI Quota Deck**.
 3. Close the window to return it to the system tray; left-click the tray icon to reopen it.
 
 **Codex:** sign in to Codex Desktop.
 
 **Claude:** if Claude Code is not detected, install it, run `claude` once in a terminal, and complete sign-in. The CLI does not need to remain open.
+
+---
+
+## Widget and Strip
+
+Use the two buttons at the top of the dashboard:
+
+- **Widget** opens a small always-on-top view. Drag its header to place it; the lock button locks or unlocks that position.
+- **Strip** arranges the same values in a compact horizontal bar. Drag anywhere outside its buttons to place it freely; it does not reserve or reduce the Windows work area.
+
+Widget and Strip remember separate positions. Open the dashboard or hide either view with its controls or the tray menu. Both reuse the dashboard's readings and make no additional provider requests.
 
 ---
 
@@ -92,9 +104,9 @@ After updating AI Quota Deck, restart the browser so it reloads the bundled brid
 
 **Browser data is stale:** open the matching tab and allow up to three minutes. The browser, bridge, tab, and tray app must all be running.
 
-**Claude is rate limited:** wait for the displayed cooldown. The deadline survives app restarts, and a recent successful reading remains visible as `cached`.
+**Claude is rate limited:** the cached card shows the cause and retry countdown. The deadline survives app restarts, and a recent successful reading remains visible.
 
-**Claude did not update while idle or locked:** this is intentional. It normally checks again shortly after you return, unless a rate-limit cooldown is still active.
+**Claude did not update while idle or locked:** this is intentional. After you return, the app waits about one minute before checking so it does not race Claude Desktop or Claude Code during wake-up. An existing rate-limit cooldown still takes priority.
 
 **Windows reports an unknown publisher:** current releases are not code-signed. Download them only from this project's GitHub Releases page.
 

@@ -10,10 +10,9 @@
 
 <p align="center">
   <img src="./assets/screenshot.png" alt="AI Quota Deck 深色完整模式" width="420">
-  <img src="./assets/screenshot2.png" alt="AI Quota Deck 深色 Mini mode" width="300">
 </p>
 
-完整模式會顯示重置時間、使用速度、方案與快取狀態；**Mini mode** 只保留各家用量百分比，並依使用量顯示綠、黃、紅色。
+Dashboard 會顯示重置時間、使用速度、方案與快取狀態；Widget 與 Strip 則保留最重要的百分比，並依用量顯示綠、黃、紅色。
 
 ---
 
@@ -30,11 +29,13 @@
 
 其他功能：
 
-- 完整模式與 Mini mode
+- Dashboard、Widget 與 Strip 三種顯示方式
+- 可置頂、記住位置並鎖定移動的 Widget
+- 可放在螢幕任意位置的精簡橫向 Strip
 - 淺色、深色與跟隨系統主題
 - 系統匣操作與選用的開機啟動
 - 服務或瀏覽器暫時無法使用時保留快取資料
-- Windows 閒置／鎖定時暫停 Claude 查詢，遇到 rate limit 時自動退避
+- Windows 閒置／鎖定時暫停 Claude Code 查詢，喚醒後稍候再更新，遇到 rate limit 時自動退避
 
 ---
 
@@ -42,13 +43,24 @@
 
 **系統需求：Windows 10 或 11。**
 
-1. [點此下載最新安裝檔](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.1.2_x64-setup.exe)。
+1. [點此下載最新安裝檔](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.2.0_x64-setup.exe)。
 2. 執行安裝檔，再啟動 **AI Quota Deck**。
 3. 關閉視窗會回到系統匣；左鍵點擊系統匣圖示即可重新開啟。
 
 **Codex：** 只需在 Codex Desktop 登入即可。
 
 **Claude：** 若沒有偵測到 Claude Code，請先安裝它，在終端機執行一次 `claude` 並完成登入；之後不必讓 CLI 持續執行。
+
+---
+
+## Widget 與 Strip
+
+主面板上方有兩個按鈕：
+
+- **Widget**：開啟置頂小工具。拖曳標題列調整位置；鎖頭按鈕可鎖定或解鎖位置。
+- **Strip**：把相同資料排成精簡橫條；按鈕以外的區域都能拖曳，而且不會保留或縮小 Windows 工作區。
+
+Widget 與 Strip 會各自記住位置。兩種畫面都可從自身按鈕或系統匣開啟主面板、隱藏，並共用主面板資料，不會增加查詢次數。
 
 ---
 
@@ -92,9 +104,9 @@ Gemini 與 Grok 必須透過隨附的 **AI Quota Deck Browser Bridge** 從瀏覽
 
 **瀏覽器資料過期：** 打開對應分頁並等待最多約三分鐘；瀏覽器、Bridge、分頁與系統匣 App 都必須正在執行。
 
-**Claude 顯示 rate limit：** 等待畫面上的冷卻倒數。期限會跨 App 重啟保留，已有的成功資料則會以 `cached` 顯示。
+**Claude 顯示 rate limit：** cached 卡片會顯示原因與重試倒數。期限會跨 App 重啟保留，已有的成功資料仍會顯示。
 
-**Claude 在閒置或鎖定時沒有更新：** 這是刻意的節流；回來操作後通常會很快補查，但既有的 rate-limit 冷卻仍優先。
+**Claude 在閒置或鎖定時沒有更新：** 這是刻意的節流。回來操作後會先等待約一分鐘再查詢，避免與剛恢復的 Claude Desktop 或 Claude Code 搶在同一時間連線；既有的 rate-limit 冷卻仍優先。
 
 **Windows 顯示未知發行者：** 目前版本尚未加入程式碼簽章，請只從本專案的 GitHub Releases 頁面下載。
 

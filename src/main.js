@@ -1,7 +1,11 @@
-import { isUserAway, providerRetryDelay } from "./polling.js";
-
+import {
+  isUserAway,
+  missedRefreshCycle,
+  providerRetryDelay,
+  resumeGraceDeadline,
+} from "./polling.js";
 const { invoke } = window.__TAURI__.core;
-const { listen } = window.__TAURI__.event;
+const { emitTo, listen } = window.__TAURI__.event;
 
 const PROVIDERS = [
   {
@@ -9,9 +13,9 @@ const PROVIDERS = [
     name: "Claude",
     command: "claude_quota",
     setup: "Run Claude Code and sign in once.",
-    // Match the proven Claude monitor: poll normally while the user is active,
-    // stop after five idle minutes or on lock, and cap 429 backoff at 15 min.
-    pollMs: 120_000,
+    // Claude's undocumented endpoint is more sensitive than the other sources.
+    // Poll conservatively while active and cap 429 backoff at 15 minutes.
+    pollMs: 360_000,
     pauseWhileAway: true,
     rateLimitBackoffMs: [180_000, 360_000, 720_000, 900_000],
     maxRateLimitBackoffMs: 900_000,
@@ -56,6 +60,10 @@ const BACKOFF_MS = [60_000, 120_000, 300_000];
 // without keyboard/mouse input, and immediately on workstation lock.
 const IDLE_PAUSE_SECONDS = 5 * 60;
 
+// Let Windows networking and provider apps settle before Claude checks resume.
+// This avoids racing Claude Desktop/Code immediately after a long sleep.
+const CLAUDE_RESUME_GRACE_MS = 60_000;
+
 // "This account has no such quota" only changes if someone subscribes, so there
 // is nothing to gain from asking every three minutes.
 const UNAVAILABLE_RECHECK_MS = 1_800_000;
@@ -65,19 +73,16 @@ const UNAVAILABLE_RECHECK_MS = 1_800_000;
 const PACE_TOLERANCE = 4;
 
 const THEME_KEY = "quota-deck-theme";
-const MINI_MODE_KEY = "quota-deck-mini-mode";
 
 const providersEl = document.getElementById("providers");
 const providerControlsEl = document.getElementById("provider-controls");
 const updatedEl = document.getElementById("updated");
 const countdownEl = document.getElementById("countdown");
-const miniModeEl = document.getElementById("mini-mode");
-const miniModeLabelEl = document.getElementById("mini-mode-label");
+const widgetModeEl = document.getElementById("widget-mode");
+const stripModeEl = document.getElementById("strip-mode");
 const themeEl = document.getElementById("theme");
-const deckEl = document.querySelector(".deck");
 
-let miniMode = document.documentElement.dataset.layout === "mini";
-let miniResizeFrame = null;
+let widgetPreferences = { visible: false, locked: false, strip: false };
 
 const nowSec = () => Math.floor(Date.now() / 1000);
 
@@ -89,50 +94,47 @@ themeEl.addEventListener("click", () => {
   const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
   localStorage.setItem(THEME_KEY, next);
   document.documentElement.dataset.theme = next;
+  void emitTo("widget", "widget-theme-changed", next).catch(() => {});
 });
 
 // Follow the system only while the user has expressed no preference of their own.
 darkQuery.addEventListener("change", (event) => {
   if (localStorage.getItem(THEME_KEY)) return;
   document.documentElement.dataset.theme = event.matches ? "dark" : "light";
+  void emitTo("widget", "widget-theme-changed", document.documentElement.dataset.theme).catch(
+    () => {},
+  );
 });
 
-// ── Mini mode ────────────────────────────────────────────────────────────────
+// ── Companion views ──────────────────────────────────────────────────────────
 
-function updateMiniModeButton() {
-  miniModeEl.setAttribute("aria-pressed", miniMode.toString());
-  miniModeEl.title = miniMode ? "Exit mini mode" : "Switch to mini mode";
-  miniModeLabelEl.textContent = miniMode ? "Full" : "Mini";
+function applyWidgetPreferences(preferences) {
+  widgetPreferences = { ...widgetPreferences, ...preferences };
+  const widgetActive = widgetPreferences.visible && !widgetPreferences.strip;
+  const stripActive = widgetPreferences.visible && widgetPreferences.strip;
+  widgetModeEl.setAttribute("aria-pressed", widgetActive.toString());
+  stripModeEl.setAttribute("aria-pressed", stripActive.toString());
+  widgetModeEl.title = widgetActive ? "Return to dashboard" : "Show desktop widget";
+  stripModeEl.title = stripActive ? "Return to dashboard" : "Show strip";
 }
 
-function scheduleMiniWindowResize() {
-  if (!miniMode) return;
-  if (miniResizeFrame !== null) cancelAnimationFrame(miniResizeFrame);
-  miniResizeFrame = requestAnimationFrame(() => {
-    miniResizeFrame = null;
-    const height = Math.ceil(deckEl.getBoundingClientRect().height);
-    void invoke("set_mini_mode", { enabled: true, height }).catch(() => {});
-  });
-}
-
-async function setMiniMode(enabled) {
-  if (enabled === miniMode) return;
-
-  if (!enabled) {
-    if (miniResizeFrame !== null) cancelAnimationFrame(miniResizeFrame);
-    miniResizeFrame = null;
-    await invoke("set_mini_mode", { enabled: false, height: 0 }).catch(() => {});
+async function setDisplayMode(mode, source) {
+  try {
+    applyWidgetPreferences(await invoke("set_display_mode", { mode }));
+  } catch (error) {
+    source.title = `Could not change display mode: ${error}`;
   }
-
-  miniMode = enabled;
-  document.documentElement.dataset.layout = enabled ? "mini" : "full";
-  localStorage.setItem(MINI_MODE_KEY, enabled.toString());
-  updateMiniModeButton();
-  render();
 }
 
-miniModeEl.addEventListener("click", () => void setMiniMode(!miniMode));
-updateMiniModeButton();
+widgetModeEl.addEventListener("click", () => {
+  const active = widgetPreferences.visible && !widgetPreferences.strip;
+  void setDisplayMode(active ? "dashboard" : "widget", widgetModeEl);
+});
+
+stripModeEl.addEventListener("click", () => {
+  const active = widgetPreferences.visible && widgetPreferences.strip;
+  void setDisplayMode(active ? "dashboard" : "strip", stripModeEl);
+});
 
 // ── Formatting ──────────────────────────────────────────────────────────────
 
@@ -239,80 +241,6 @@ function renderWindow(window_) {
   return row;
 }
 
-function isSevenDayWindow(window_) {
-  return window_.window_seconds === 7 * 24 * 60 * 60 || /^weekly\b/i.test(window_.label);
-}
-
-function miniWindowLabel(window_) {
-  const scopedLabel = window_.label.split("·")[1]?.trim();
-  if (scopedLabel) return scopedLabel;
-
-  const seconds = window_.window_seconds;
-  if (seconds === 5 * 60 * 60 || /^session\b/i.test(window_.label)) return "5h";
-  if (seconds === 24 * 60 * 60 || /^daily\b/i.test(window_.label)) return "1d";
-  if (isSevenDayWindow(window_)) return "7d";
-  if (seconds === 30 * 24 * 60 * 60 || /^monthly\b/i.test(window_.label)) return "30d";
-  return window_.label.length > 8 ? `${window_.label.slice(0, 7)}…` : window_.label;
-}
-
-function renderMiniMetric(window_) {
-  const metric = el("span", "mini-metric");
-  // Mini mode deliberately mirrors the sibling extensions: green below 70,
-  // amber from 70, red from 90. The full view may additionally honor a
-  // provider-specific severity hint.
-  metric.style.setProperty("--meter", meterVar(window_.percent, null));
-  metric.title = `${window_.label}: ${Math.round(window_.percent)}% used`;
-  metric.append(
-    el("span", "mini-period", miniWindowLabel(window_)),
-    el("span", "mini-value", `${Math.round(window_.percent)}%`),
-  );
-  return metric;
-}
-
-function renderMiniProvider(provider, quota) {
-  const section = el("section", "mini-provider");
-  const identity = el("div", "mini-provider-id");
-  const name = el("h2", "mini-provider-name", provider.name);
-  if (quota?.status === "ok" && quota.plan) name.title = quota.plan;
-  identity.append(name);
-
-  if (quota?.status === "ok" && quota.stale) {
-    const cached = el("span", "mini-cached", "cached");
-    cached.title = quota.stale.observed_at
-      ? `Cached · ${ago(quota.stale.observed_at)}`
-      : "Cached data";
-    identity.append(cached);
-  }
-  section.append(identity);
-
-  const metrics = el("div", "mini-metrics");
-  if (!quota) {
-    metrics.append(el("span", "mini-state", "…"));
-  } else if (quota.status !== "ok") {
-    const state = el(
-      "span",
-      quota.status === "unavailable" ? "mini-state" : "mini-state problem",
-      quota.status === "unavailable" ? "—" : "!",
-    );
-    if (quota.message) state.title = quota.message;
-    metrics.append(state);
-  } else {
-    const windows = provider.id === "grok"
-      ? quota.windows.filter(isSevenDayWindow).slice(0, 1)
-      : quota.windows;
-    if (provider.id === "grok" && windows.length === 0) {
-      const missing = el("span", "mini-metric unavailable");
-      missing.title = "This Grok account does not report a 7-day quota.";
-      missing.append(el("span", "mini-period", "7d"), el("span", "mini-value", "—"));
-      metrics.append(missing);
-    } else {
-      metrics.append(...windows.map(renderMiniMetric));
-    }
-  }
-  section.append(metrics);
-  return section;
-}
-
 function renderProvider(provider, quota) {
   const section = el("section", "provider");
 
@@ -375,7 +303,17 @@ function renderProvider(provider, quota) {
 
   if (quota.stale) {
     const when = quota.stale.observed_at ? ago(quota.stale.observed_at) : "unknown age";
-    section.append(el("p", "note stale", `From ${quota.stale.source} · ${when}`));
+    const note = el("p", "note stale", `From ${quota.stale.source} · ${when}`);
+    if (quota.stale.reason) {
+      note.append(document.createElement("br"), document.createTextNode(quota.stale.reason));
+      const waitMs = slot(provider.id).backoffUntil - Date.now();
+      if (waitMs > 0) {
+        note.append(
+          document.createTextNode(` Retrying in ${duration(Math.ceil(waitMs / 1000))}.`),
+        );
+      }
+    }
+    section.append(note);
   }
 
   return section;
@@ -499,14 +437,25 @@ function render() {
     ? PROVIDERS.filter(({ id }) => results[id].status === "not_configured")
     : [];
 
-  const providerRenderer = miniMode ? renderMiniProvider : renderProvider;
   providersEl.replaceChildren(
     ...(configured.length
-      ? configured.map((provider) => providerRenderer(provider, results[provider.id]))
+      ? configured.map((provider) => renderProvider(provider, results[provider.id]))
       : [renderEmptyState(checked)]),
   );
   renderProviderControls(missing, checked);
-  scheduleMiniWindowResize();
+  publishWidgetSnapshot();
+}
+
+function publishWidgetSnapshot() {
+  const backoffUntil = Object.fromEntries(
+    PROVIDERS.map(({ id }) => [id, schedule[id]?.backoffUntil ?? 0]),
+  );
+  void emitTo("widget", "quota-snapshot", {
+    results,
+    backoffUntil,
+    updatedAt: lastUpdatedAt?.getTime() ?? null,
+    theme: document.documentElement.dataset.theme,
+  }).catch(() => {});
 }
 
 // ── Polling ─────────────────────────────────────────────────────────────────
@@ -630,30 +579,51 @@ async function refresh(providers = PROVIDERS, { markUpdated = true } = {}) {
 function scheduleNextRefresh() {
   clearTimeout(refreshTimer);
   nextRefreshAt = Date.now() + POLL_MS;
+  const scheduledAt = nextRefreshAt;
   updateRefreshStatus();
   refreshTimer = setTimeout(async () => {
+    if (missedRefreshCycle(Date.now(), scheduledAt, POLL_MS)) deferClaudeAfterResume();
     await refresh();
     scheduleNextRefresh();
   }, POLL_MS);
 }
+
+await listen("widget-ready", publishWidgetSnapshot);
+await listen("widget-preferences-changed", ({ payload }) => applyWidgetPreferences(payload));
+applyWidgetPreferences(await invoke("widget_preferences").catch(() => widgetPreferences));
 
 render();
 // Resolved once: the staging path only changes if the user moves their profile.
 // A failure here just hides the copy/open shortcuts; the README still has the path.
 bridgePath = await invoke("bridge_dir").catch(() => null);
 
-// Rust watches activity outside the WebView so this recovery is not delayed by
-// Chromium background-timer throttling while the tray window is hidden. If the
-// normal provider cycle is just finishing, retry after it releases the guard.
-const refreshClaudeAfterResume = () => {
-  if (inFlight) {
-    setTimeout(refreshClaudeAfterResume, 1_000);
+// Rust emits this tick outside the WebView. It recovers an overdue global cycle
+// when Chromium throttles the hidden dashboard and still lets Claude retry an
+// expired 429 independently between those cycles.
+function refreshFromNativeTick() {
+  if (inFlight) return;
+  if (nextRefreshAt && Date.now() >= nextRefreshAt) {
+    void (async () => {
+      await refresh();
+      scheduleNextRefresh();
+    })();
     return;
   }
   const claude = PROVIDERS.find(({ id }) => id === "claude");
   if (claude) void refresh([claude], { markUpdated: false });
-};
-await listen("system-activity-resumed", refreshClaudeAfterResume);
+}
+
+function deferClaudeAfterResume() {
+  const state = slot("claude");
+  state.recheckAfter = resumeGraceDeadline(
+    Date.now(),
+    state.recheckAfter,
+    CLAUDE_RESUME_GRACE_MS,
+  );
+}
+
+await listen("system-activity-resumed", deferClaudeAfterResume);
+await listen("active-refresh-tick", refreshFromNativeTick);
 
 await refresh();
 scheduleNextRefresh();
@@ -673,7 +643,9 @@ const RESUME_PROVIDERS = PROVIDERS.filter(
 );
 
 function refreshAfterReveal() {
-  if (!document.hidden) void refresh(RESUME_PROVIDERS, { markUpdated: false });
+  if (document.hidden) return;
+  if (missedRefreshCycle(Date.now(), nextRefreshAt, POLL_MS)) deferClaudeAfterResume();
+  void refresh(RESUME_PROVIDERS, { markUpdated: false });
 }
 
 document.addEventListener("visibilitychange", refreshAfterReveal);

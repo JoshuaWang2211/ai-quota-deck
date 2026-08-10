@@ -4,7 +4,16 @@ All notable changes to AI Quota Deck are documented here.
 
 ---
 
-## v0.1.2 - 2026-08-09
+## v0.2.0 - 2026-08-10
+
+- Replaced Mini mode with three focused views: Dashboard, an always-on-top Widget, and a compact movable Strip.
+- Added compact color-coded quota values, separately remembered Widget/Strip positions, Widget movement lock/unlock, and tray controls for both companion views.
+- Kept the dashboard as the only provider poller; Widget and Strip receive quota snapshots without adding provider requests.
+- Made Claude wake recovery more conservative: checks wait one minute after resume, use a six-minute active polling floor, recover from expired cooldowns through a native background tick, and show cached failure reasons with retry countdowns.
+
+---
+
+## v0.1.2 - 2026-08-10
 
 - Fixed premature and duplicate desktop shortcuts. The installer now creates one **AI Quota Deck** shortcut only when the finish-page option is selected.
 - Standardized the installer, install directory, Start menu, and uninstall entry on the **AI Quota Deck** product name.

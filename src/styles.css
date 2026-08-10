@@ -111,6 +111,11 @@ body {
   color: var(--title);
 }
 
+.tool[aria-pressed="true"] {
+  background: var(--chip);
+  color: var(--title);
+}
+
 .tool:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -194,139 +199,6 @@ body {
   margin-left: auto;
   font-size: 10px;
   color: var(--loading);
-}
-
-/* ── Mini mode ────────────────────────────────────────────────────────── */
-
-:root[data-layout="mini"] body {
-  min-height: 0;
-}
-
-:root[data-layout="mini"] .deck {
-  height: auto;
-  overflow: hidden;
-}
-
-:root[data-layout="mini"] .deck-head {
-  gap: 5px;
-  padding: 7px 10px;
-}
-
-:root[data-layout="mini"] .wordmark {
-  font-size: 10px;
-}
-
-:root[data-layout="mini"] .refresh-status,
-:root[data-layout="mini"] .provider-controls,
-:root[data-layout="mini"] .deck-foot {
-  display: none;
-}
-
-:root[data-layout="mini"] .tool {
-  gap: 4px;
-  padding: 3px 5px;
-  font-size: 10px;
-}
-
-:root[data-layout="mini"] .providers {
-  padding: 0;
-}
-
-.mini-provider {
-  display: grid;
-  grid-template-columns: 88px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  min-height: 34px;
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--rule);
-}
-
-.mini-provider:last-child {
-  border-bottom: 0;
-}
-
-.mini-provider-id,
-.mini-metrics,
-.mini-metric {
-  display: flex;
-  align-items: baseline;
-}
-
-.mini-provider-id {
-  min-width: 0;
-  gap: 4px;
-}
-
-.mini-provider-name {
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  color: var(--title);
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.mini-cached {
-  color: var(--loading);
-  font-size: 8px;
-  line-height: 1;
-}
-
-.mini-metrics {
-  justify-content: flex-end;
-  gap: 9px;
-  min-width: 0;
-}
-
-.mini-metric {
-  gap: 3px;
-  white-space: nowrap;
-}
-
-.mini-period {
-  max-width: 52px;
-  overflow: hidden;
-  color: var(--label);
-  font-size: 9px;
-  text-overflow: ellipsis;
-}
-
-.mini-value {
-  color: var(--meter);
-  font-size: 12px;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-}
-
-.mini-metric.unavailable .mini-value,
-.mini-state {
-  color: var(--loading);
-}
-
-.mini-state {
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.mini-state.problem {
-  color: var(--crit);
-}
-
-:root[data-layout="mini"] .provider-empty {
-  padding: 14px 12px;
-}
-
-:root[data-layout="mini"] .provider-empty h2 {
-  font-size: 12px;
-}
-
-:root[data-layout="mini"] .provider-empty p {
-  display: none;
 }
 
 /* ── One quota window ─────────────────────────────────────────────────── */

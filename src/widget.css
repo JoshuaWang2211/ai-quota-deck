@@ -1,0 +1,316 @@
+:root {
+  --surface: rgba(238, 243, 249, 0.94);
+  --surface-edge: rgba(52, 73, 94, 0.2);
+  --header: rgba(255, 255, 255, 0.38);
+  --title: #2c3e50;
+  --label: #687778;
+  --muted: #879394;
+  --rule: rgba(0, 0, 0, 0.08);
+  --hover: rgba(255, 255, 255, 0.65);
+  --ok: #27ae60;
+  --warning: #d88700;
+  --critical: #e74c3c;
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+
+:root[data-theme="dark"] {
+  --surface: rgba(30, 43, 55, 0.94);
+  --surface-edge: rgba(255, 255, 255, 0.15);
+  --header: rgba(255, 255, 255, 0.045);
+  --title: #ecf0f1;
+  --label: #aeb9ba;
+  --muted: #829091;
+  --rule: rgba(255, 255, 255, 0.08);
+  --hover: rgba(255, 255, 255, 0.12);
+  --warning: #f39c12;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  color: var(--title);
+  font-family: var(--font);
+  user-select: none;
+  cursor: default;
+}
+
+body {
+  padding: 6px;
+}
+
+.widget {
+  overflow: hidden;
+  border: 1px solid var(--surface-edge);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 7px 22px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(14px);
+}
+
+.widget-head {
+  display: flex;
+  align-items: center;
+  min-height: 29px;
+  padding: 4px 6px 4px 9px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--header);
+}
+
+.widget-title {
+  color: var(--title);
+  font-size: 9.5px;
+  font-weight: 650;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.widget-status {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: 8px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 8.5px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.widget-controls {
+  display: flex;
+  gap: 1px;
+  margin-left: 5px;
+}
+
+.widget-controls button {
+  display: grid;
+  width: 22px;
+  height: 20px;
+  padding: 3px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  place-items: center;
+}
+
+.widget-controls button:hover {
+  background: var(--hover);
+  color: var(--title);
+}
+
+.widget-controls button:focus-visible {
+  outline: 2px solid #3498db;
+  outline-offset: -1px;
+}
+
+.widget-controls svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.unlock-icon {
+  display: none;
+}
+
+:root[data-locked="true"] .lock-icon {
+  display: none;
+}
+
+:root[data-locked="true"] .unlock-icon {
+  display: block;
+}
+
+.widget-providers {
+  min-height: 34px;
+}
+
+.widget-provider {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 12px;
+  min-height: 30px;
+  padding: 6px 9px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.widget-provider:last-child {
+  border-bottom: 0;
+}
+
+.widget-provider.cached {
+  opacity: 0.7;
+}
+
+.provider-identity,
+.widget-metrics,
+.widget-metric {
+  display: flex;
+  align-items: baseline;
+}
+
+.provider-identity {
+  min-width: 0;
+  gap: 4px;
+}
+
+.provider-name {
+  overflow: hidden;
+  color: var(--title);
+  font-size: 10px;
+  font-weight: 680;
+  letter-spacing: 0.065em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.cached-label {
+  color: var(--muted);
+  font-size: 7.5px;
+}
+
+.widget-metrics {
+  justify-content: flex-start;
+  gap: 9px;
+  min-width: 0;
+}
+
+.widget-metric {
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.metric-period {
+  max-width: 45px;
+  overflow: hidden;
+  color: var(--label);
+  font-size: 8.5px;
+  text-overflow: ellipsis;
+}
+
+.metric-value {
+  color: var(--ok);
+  font-size: 11.5px;
+  font-weight: 680;
+  font-variant-numeric: tabular-nums;
+}
+
+.widget-metric.warning .metric-value {
+  color: var(--warning);
+}
+
+.widget-metric.critical .metric-value,
+.provider-state.problem {
+  color: var(--critical);
+}
+
+.widget-metric.unavailable .metric-value,
+.provider-state {
+  color: var(--muted);
+}
+
+.provider-state {
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.widget-empty {
+  margin: 0;
+  padding: 12px;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: center;
+}
+
+/* Strip is a compact floating view. It stays movable and never changes the
+   Windows work area. */
+:root[data-mode="strip"] body {
+  padding: 4px;
+}
+
+:root[data-mode="strip"] .widget {
+  display: flex;
+  width: 100%;
+  height: 32px;
+  border-radius: 7px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  cursor: move;
+}
+
+:root[data-mode="strip"] .widget-head {
+  order: 2;
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 6px;
+  border-bottom: 0;
+  border-left: 1px solid var(--rule);
+}
+
+:root[data-mode="strip"] .widget-title,
+:root[data-mode="strip"] .widget-status,
+:root[data-mode="strip"] #lock-widget,
+:root[data-mode="strip"] .cached-label {
+  display: none;
+}
+
+:root[data-mode="strip"] .widget-controls {
+  gap: 3px;
+  margin-left: 0;
+}
+
+:root[data-mode="strip"] .widget-controls button {
+  width: 22px;
+  height: 22px;
+}
+
+:root[data-mode="strip"] .widget-providers {
+  display: flex;
+  flex: 1;
+  justify-content: center;
+  min-width: 0;
+  min-height: 30px;
+  overflow: hidden;
+}
+
+:root[data-mode="strip"] .widget-provider {
+  flex: 0 0 auto;
+  grid-template-columns: max-content max-content;
+  column-gap: 9px;
+  max-width: none;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 10px;
+  border-right: 1px solid var(--rule);
+  border-bottom: 0;
+}
+
+:root[data-mode="strip"] .widget-provider:last-child {
+  border-right: 0;
+}
+
+:root[data-mode="strip"] .widget-empty {
+  align-self: center;
+  padding: 0 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .widget {
+    backdrop-filter: none;
+  }
+}

@@ -8,6 +8,7 @@ use tauri::Emitter;
 
 pub const IDLE_PAUSE_SECONDS: u64 = 5 * 60;
 const ACTIVITY_PROBE_SECONDS: u64 = 5;
+const ACTIVE_REFRESH_TICK_SECONDS: u64 = 60;
 
 #[derive(Serialize)]
 pub struct SystemActivity {
@@ -21,17 +22,36 @@ impl SystemActivity {
     }
 }
 
-/// Watch activity outside the WebView so Chromium background throttling cannot
-/// delay the transition that wakes Claude polling. The network request itself
-/// remains in the normal provider scheduler and re-checks this state first.
+fn advance_refresh_tick(remaining: u64, user_away: bool, just_resumed: bool) -> (u64, bool) {
+    if user_away || just_resumed {
+        return (ACTIVE_REFRESH_TICK_SECONDS, false);
+    }
+    if remaining <= ACTIVITY_PROBE_SECONDS {
+        (ACTIVE_REFRESH_TICK_SECONDS, true)
+    } else {
+        (remaining - ACTIVITY_PROBE_SECONDS, false)
+    }
+}
+
+/// Drive Claude recovery outside the WebView so Chromium background throttling
+/// cannot delay either the post-resume grace period or an expired 429 cooldown.
+/// The frontend still owns request floors/backoff and re-checks activity first.
 pub fn watch(app: tauri::AppHandle) {
     std::thread::spawn(move || {
         let mut was_away = snapshot().user_away();
+        let mut refresh_tick_remaining = ACTIVE_REFRESH_TICK_SECONDS;
         loop {
             std::thread::sleep(Duration::from_secs(ACTIVITY_PROBE_SECONDS));
             let user_away = snapshot().user_away();
-            if was_away && !user_away {
+            let just_resumed = was_away && !user_away;
+            if just_resumed {
                 let _ = app.emit("system-activity-resumed", ());
+            }
+            let (next_remaining, refresh_due) =
+                advance_refresh_tick(refresh_tick_remaining, user_away, just_resumed);
+            refresh_tick_remaining = next_remaining;
+            if refresh_due {
+                let _ = app.emit("active-refresh-tick", ());
             }
             was_away = user_away;
         }
@@ -140,6 +160,14 @@ mod tests {
             workstation_locked: true,
         }
         .user_away());
+    }
+
+    #[test]
+    fn native_refresh_tick_waits_after_resume_and_stops_while_away() {
+        assert_eq!(advance_refresh_tick(5, false, false), (60, true));
+        assert_eq!(advance_refresh_tick(5, true, false), (60, false));
+        assert_eq!(advance_refresh_tick(5, false, true), (60, false));
+        assert_eq!(advance_refresh_tick(60, false, false), (55, false));
     }
 }
 

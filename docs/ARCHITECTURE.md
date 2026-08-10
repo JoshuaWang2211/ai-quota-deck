@@ -70,6 +70,25 @@ still use its CLI fallback). The production bridge installation is guided
 unpacked loading (§8). Local discovery repeats on the normal poll so a new
 sign-in appears without restarting the app.
 
+### Why Widget and Strip share a second window, but not a second poller
+
+Widget and Strip reuse one frameless, always-on-top Tauri window that skips the
+taskbar. Widget presents a narrow vertical table; Strip turns the same data into
+a compact horizontal bar. Both can be dragged anywhere and remember independent
+screen positions. Widget's lock blocks movement while leaving its controls
+available, so the same button can unlock it. Strip remains freely movable and
+never reserves or changes the Windows work area.
+
+The companion window never calls a provider command. The hidden main dashboard
+remains the sole scheduler and sends quota-only snapshots through targeted Tauri
+events. A native active-only tick prevents a due three-minute cycle from being
+stranded by a throttled hidden WebView; request floors and backoff remain in
+control. Neither companion view adds Claude, Codex, Gemini, or Grok requests.
+
+Selected view, Widget lock state, and both sets of physical screen coordinates
+are stored in `%LOCALAPPDATA%\ai-quota-deck\widget.json`. A position from a
+disconnected monitor is moved back to the primary monitor.
+
 ### Why the current bridge is a separate process, but not a second executable
 
 Chrome's native messaging **starts the host process itself**; an extension
@@ -112,11 +131,16 @@ itself recorded at the same moment. Poll intervals are a question of politeness
 and rate limiting, not cost.
 
 Polling is provider-specific. Local and browser-backed reads use the deck's
-three-minute cycle. Claude follows that cycle only while the workstation is in
-use: native `GetLastInputInfo` / `OpenInputDesktop` probes pause its network
-requests after five idle minutes or immediately on lock, and a native background
-watcher resumes the check within about five seconds after the user returns. A
-focus/reveal check still has a two-minute success cooldown. No input contents or
+three-minute cycle. Claude uses a six-minute request floor and only polls while
+the workstation is in use: native `GetLastInputInfo` / `OpenInputDesktop` probes
+pause its network requests after five idle minutes or immediately on lock. A
+native background watcher notices the user's return, but the request waits one
+minute so Windows networking, Claude Desktop, and Claude Code can settle first.
+The same native watcher emits an active-only refresh tick every minute. It
+recovers an overdue global cycle when the hidden WebView's timers are throttled,
+while also letting an expired Claude 429 recover independently between cycles;
+request floors and backoff suppress unnecessary calls. An overdue WebView timer
+and a focus/reveal event apply the same grace period. No input contents or
 activity history are read or stored.
 
 Claude 429 responses retain their cooldown even when cached rows keep the card
@@ -127,8 +151,9 @@ stores only the deadline and consecutive count, so restarting the app cannot
 bypass or reset an active cooldown. A
 successful response is persisted as a quota-only snapshot; if a later live
 request fails, unexpired rows remain visible as cached for at most 24 hours.
-This prevents a temporary 429 from turning the Claude card into an empty error
-without carrying a row past its reset.
+The cached card shows the failure reason and retry countdown. This prevents a
+temporary 429 from turning the Claude card into an empty error without hiding
+why the reading is stale or carrying a row past its reset.
 
 **Credentials stay in memory.** No token value may reach a log line, an error
 message, or a crash report.
@@ -544,11 +569,10 @@ pace marker; an unknown kind receives no pace marker. Either way — **the provi
 names the window, the app never guesses from its slot.**
 
 The full dashboard renders every reported window with reset and pace details.
-Mini mode reuses the same normalized data but compresses it to period labels and
-percentages; Grok intentionally shows only its seven-day window there. Mini
-values follow the companion extensions' thresholds: green below 70%, amber from
-70%, and red from 90%. The selected layout is kept locally, and the native
-window resizes to fit its rendered content.
+Widget and Strip reuse the same normalized data but compress it to period
+labels and percentages; Grok intentionally shows only its seven-day window.
+Compact values follow the companion extensions' thresholds: green below 70%,
+amber from 70%, and red from 90%.
 
 ---
 

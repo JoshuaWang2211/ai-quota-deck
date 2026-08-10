@@ -4,6 +4,14 @@ export function isUserAway(activity, idlePauseSeconds) {
   );
 }
 
+export function resumeGraceDeadline(now, currentDeadline, graceMs) {
+  return Math.max(currentDeadline ?? 0, now + graceMs);
+}
+
+export function missedRefreshCycle(now, scheduledAt, cycleMs) {
+  return Boolean(scheduledAt && now - scheduledAt >= cycleMs);
+}
+
 export function providerRetryDelay(result, provider, failures, defaultBackoffMs) {
   const retryAfterSeconds = result?.retry_after_seconds;
   const rateLimited =
