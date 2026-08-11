@@ -253,7 +253,10 @@ widgetEl.addEventListener("pointerdown", (event) => {
 
 widgetEl.addEventListener("dblclick", (event) => {
   if (event.target.closest("button")) return;
-  if (!preferences.strip && !event.target.closest(".widget-head")) return;
+  // Strip uses its explicit dashboard button. Treating a quick drag/click as a
+  // double-click could otherwise switch modes and make the strip appear to
+  // vanish. Widget keeps the convenient header shortcut.
+  if (preferences.strip || !event.target.closest(".widget-head")) return;
   void invoke("open_dashboard");
 });
 

@@ -46,7 +46,7 @@ Other features:
 - Light, dark, and system themes
 - Windows tray controls and optional launch at startup
 - Cached readings when a provider or browser is temporarily unavailable
-- Claude Code polling pauses while Windows is idle or locked, waits briefly after wake, and backs off safely after rate limits
+- Claude Code polling pauses while Windows is idle or locked, recovers expired OAuth sessions through the official CLI, and backs off safely after rate limits
 
 ---
 
@@ -54,7 +54,7 @@ Other features:
 
 **Requires Windows 10 or 11.**
 
-1. [Download the latest installer](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.2.0_x64-setup.exe).
+1. [Download the latest installer](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.2.1_x64-setup.exe).
 2. Run it, then launch **AI Quota Deck**.
 3. Close the window to return it to the system tray; left-click the tray icon to reopen it.
 
@@ -128,6 +128,8 @@ If you only need to check Gemini or Grok usage without running the desktop app, 
 
 **Claude did not update while idle or locked:** this is intentional. After you return, the app waits about one minute before checking so it does not race Claude Desktop or Claude Code during wake-up. An existing rate-limit cooldown still takes priority.
 
+**Claude reports a rejected token:** the deck asks the installed Claude Code CLI to refresh it in the background, then retries automatically. If that fails, open Claude Code once.
+
 **Windows reports an unknown publisher:** current releases are not code-signed. Download them only from this project's GitHub Releases page.
 
 ---
@@ -137,7 +139,7 @@ If you only need to check Gemini or Grok usage without running the desktop app, 
 AI Quota Deck has no telemetry and uploads nothing.
 
 - It uses sign-ins already stored by the supported desktop or CLI clients.
-- It never refreshes provider tokens.
+- It never reads or uses provider refresh tokens. After a Claude `401`, it runs the official `claude update` command in the background and rereads Claude Code's access token; this command may also update Claude Code itself.
 - The bridge can read only `gemini.google.com` and `grok.com`.
 - Only quota values, reset times, provider/account slots, and observation times reach the app. Cookies and page tokens stay in the browser.
 

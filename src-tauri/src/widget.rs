@@ -6,6 +6,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Mutex, MutexGuard,
     },
+    time::{Duration, Instant},
 };
 use tauri::{
     AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, PhysicalSize, WebviewWindow,
@@ -23,6 +24,8 @@ const MIN_STRIP_WIDTH: f64 = 300.0;
 const MAX_STRIP_WIDTH: f64 = 900.0;
 const STRIP_HEIGHT: f64 = 40.0;
 const SCREEN_MARGIN: i32 = 24;
+const USER_DRAG_WINDOW: Duration = Duration::from_secs(30);
+const PROGRAMMATIC_MOVE_WINDOW: Duration = Duration::from_secs(5);
 const PREFERENCES_EVENT: &str = "widget-preferences-changed";
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
@@ -40,6 +43,8 @@ pub struct WidgetPreferences {
 pub struct WidgetState {
     preferences: Mutex<WidgetPreferences>,
     position_updates_suspended: AtomicBool,
+    user_drag_until: Mutex<Option<Instant>>,
+    programmatic_position: Mutex<Option<(PhysicalPosition<i32>, Instant)>>,
 }
 
 impl WidgetState {
@@ -51,6 +56,8 @@ impl WidgetState {
         Self {
             preferences: Mutex::new(preferences),
             position_updates_suspended: AtomicBool::new(false),
+            user_drag_until: Mutex::new(None),
+            programmatic_position: Mutex::new(None),
         }
     }
 
@@ -75,8 +82,56 @@ impl WidgetState {
             .store(suspended, Ordering::Release);
     }
 
+    fn begin_user_drag(&self) -> Result<(), String> {
+        *self
+            .user_drag_until
+            .lock()
+            .map_err(|_| "widget drag state is unavailable".to_string())? =
+            Some(Instant::now() + USER_DRAG_WINDOW);
+        Ok(())
+    }
+
+    fn end_user_drag(&self) {
+        if let Ok(mut until) = self.user_drag_until.lock() {
+            *until = None;
+        }
+    }
+
+    fn user_drag_active(&self) -> bool {
+        let Ok(mut until) = self.user_drag_until.lock() else {
+            return false;
+        };
+        if until.is_some_and(|deadline| deadline > Instant::now()) {
+            return true;
+        }
+        *until = None;
+        false
+    }
+
+    fn expect_programmatic_position(&self, position: PhysicalPosition<i32>) {
+        if let Ok(mut expected) = self.programmatic_position.lock() {
+            *expected = Some((position, Instant::now() + PROGRAMMATIC_MOVE_WINDOW));
+        }
+    }
+
+    fn is_programmatic_position(&self, position: PhysicalPosition<i32>) -> bool {
+        let Ok(mut expected) = self.programmatic_position.lock() else {
+            return false;
+        };
+        let matches = expected.is_some_and(|(candidate, deadline)| {
+            deadline > Instant::now() && candidate == position
+        });
+        if matches || expected.is_some_and(|(_, deadline)| deadline <= Instant::now()) {
+            *expected = None;
+        }
+        matches
+    }
+
     pub fn remember_position(&self, position: PhysicalPosition<i32>) -> Result<(), String> {
         if self.position_updates_suspended.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        if self.is_programmatic_position(position) || !self.user_drag_active() {
             return Ok(());
         }
         let mut preferences = self.snapshot()?;
@@ -150,6 +205,10 @@ fn saved_position(preferences: &WidgetPreferences) -> Option<PhysicalPosition<i3
         preferences.x.zip(preferences.y)
     };
     coordinates.map(|(x, y)| PhysicalPosition::new(x, y))
+}
+
+fn should_place_after_resize(preferences: &WidgetPreferences) -> bool {
+    saved_position(preferences).is_none()
 }
 
 fn store_position(preferences: &mut WidgetPreferences, position: PhysicalPosition<i32>) -> bool {
@@ -239,10 +298,11 @@ pub fn apply(app: &AppHandle, state: &WidgetState) -> Result<WidgetPreferences, 
     let window = app
         .get_webview_window(WINDOW_LABEL)
         .ok_or_else(|| "widget window is unavailable".to_string())?;
-    let mut preferences = state.snapshot()?;
+    let preferences = state.snapshot()?;
     if preferences.visible {
         prepare_document(&window, &preferences);
     }
+    state.end_user_drag();
     state.suspend_position_updates(true);
     let result = (|| -> Result<(), String> {
         if !preferences.visible {
@@ -253,7 +313,7 @@ pub fn apply(app: &AppHandle, state: &WidgetState) -> Result<WidgetPreferences, 
             .set_size(initial_size(&preferences))
             .map_err(|error| error.to_string())?;
         let position = place_on_screen(&window, &preferences)?;
-        store_position(&mut preferences, position);
+        state.expect_programmatic_position(position);
         window
             .set_position(position)
             .map_err(|error| error.to_string())?;
@@ -326,7 +386,12 @@ pub fn start_dragging(window: &WebviewWindow, state: &WidgetState) -> Result<(),
     if !preferences.strip && preferences.locked {
         return Err("unlock the widget before moving it".to_string());
     }
-    window.start_dragging().map_err(|error| error.to_string())
+    state.begin_user_drag()?;
+    if let Err(error) = window.start_dragging() {
+        state.end_user_drag();
+        return Err(error.to_string());
+    }
+    Ok(())
 }
 
 pub fn resize(
@@ -338,7 +403,7 @@ pub fn resize(
     if window.label() != WINDOW_LABEL {
         return Err("only the companion window can resize itself".to_string());
     }
-    let mut preferences = state.snapshot()?;
+    let preferences = state.snapshot()?;
     let size = if preferences.strip {
         let width = if width.is_finite() {
             width.clamp(MIN_STRIP_WIDTH, MAX_STRIP_WIDTH)
@@ -361,20 +426,73 @@ pub fn resize(
     };
 
     state.suspend_position_updates(true);
-    let result = (|| -> Result<PhysicalPosition<i32>, String> {
+    let result = (|| -> Result<(), String> {
         window.set_size(size).map_err(|error| error.to_string())?;
+        // Once the user has placed a companion, content-driven resizing must
+        // never touch its coordinates. Re-running monitor selection here made
+        // mixed-DPI physical positions look off-screen and snapped a correctly
+        // saved Strip back to the default top-right position a few seconds
+        // after a drag. A never-positioned companion still gets its initial
+        // top-right anchor after the measured size is known.
+        if state.user_drag_active() || !should_place_after_resize(&preferences) {
+            return Ok(());
+        }
         let position = place_on_screen(window, &preferences)?;
+        state.expect_programmatic_position(position);
         window
             .set_position(position)
             .map_err(|error| error.to_string())?;
-        Ok(position)
+        Ok(())
     })();
     state.suspend_position_updates(false);
-    let position = result?;
-    if store_position(&mut preferences, position) {
-        state.replace(preferences)?;
+    result
+}
+
+/// Reassert a companion window after Windows wakes and restores its monitor
+/// topology. Windows can temporarily relocate always-on-top windows while an
+/// external display is still waking; that system move must not replace the
+/// user's saved position.
+pub fn restore_after_resume(app: &AppHandle, state: &WidgetState) -> Result<bool, String> {
+    let preferences = state.snapshot()?;
+    if !preferences.visible || state.user_drag_active() {
+        return Ok(false);
     }
-    Ok(())
+    let window = app
+        .get_webview_window(WINDOW_LABEL)
+        .ok_or_else(|| "widget window is unavailable".to_string())?;
+
+    window
+        .set_always_on_top(true)
+        .map_err(|error| error.to_string())?;
+    if !window.is_visible().unwrap_or(false) {
+        window.show().map_err(|error| error.to_string())?;
+    }
+
+    let Some(saved) = saved_position(&preferences) else {
+        return Ok(true);
+    };
+    let window_size = window.outer_size().map_err(|error| error.to_string())?;
+    let (screens, _) = screens(&window)?;
+    // Do not fall back to the primary display while a saved monitor is still
+    // waking. A later retry will restore the original screen; a permanent
+    // disconnection is handled by normal mode activation without erasing it.
+    if !screens
+        .iter()
+        .any(|screen| screen.contains(saved.x, saved.y))
+    {
+        return Ok(false);
+    }
+    let Some(position) = clamped_position(Some(saved), window_size, &screens, None) else {
+        return Ok(false);
+    };
+
+    state.suspend_position_updates(true);
+    state.expect_programmatic_position(position);
+    let result = window
+        .set_position(position)
+        .map_err(|error| error.to_string());
+    state.suspend_position_updates(false);
+    result.map(|_| true)
 }
 
 #[cfg(test)]
@@ -450,6 +568,22 @@ mod tests {
             saved_position(&preferences),
             Some(PhysicalPosition::new(100, 80))
         );
+    }
+
+    #[test]
+    fn content_resize_never_repositions_a_user_placed_companion() {
+        let mut preferences = WidgetPreferences::default();
+        assert!(should_place_after_resize(&preferences));
+
+        preferences.strip = true;
+        preferences.strip_x = Some(9);
+        preferences.strip_y = Some(2_073);
+        assert!(!should_place_after_resize(&preferences));
+
+        preferences.strip = false;
+        preferences.x = Some(285);
+        preferences.y = Some(1_789);
+        assert!(!should_place_after_resize(&preferences));
     }
 
     #[test]

@@ -86,8 +86,19 @@ stranded by a throttled hidden WebView; request floors and backoff remain in
 control. Neither companion view adds Claude, Codex, Gemini, or Grok requests.
 
 Selected view, Widget lock state, and both sets of physical screen coordinates
-are stored in `%LOCALAPPDATA%\ai-quota-deck\widget.json`. A position from a
-disconnected monitor is moved back to the primary monitor.
+are stored in `%LOCALAPPDATA%\ai-quota-deck\widget.json`. Only native drags may
+replace those coordinates; moves caused by resize, sleep, DPI, or monitor
+topology changes are ignored. After wake, the native activity watcher reasserts
+always-on-top state and retries the saved position while monitors settle. If a
+saved monitor is unavailable, the window can fall back to the primary display
+without erasing the original coordinates.
+
+Content measurement may change Widget or Strip dimensions after a quota
+snapshot, but a resize never runs monitor placement once that view has saved
+coordinates. This is important on mixed-DPI desktops, where a physical window
+position and a temporarily virtualized monitor rectangle can use different
+scales; treating that mismatch as a disconnected display would snap the view to
+the default top-right position even though the saved coordinates were correct.
 
 ### Why the current bridge is a separate process, but not a second executable
 
@@ -116,11 +127,12 @@ installed updates.
 
 ## 2. Rules that apply to every provider
 
-**Never refresh a token.** Re-read the credential file on every poll and let the
-vendor's own CLI or app handle renewal. Refresh tokens rotate: spending one
+**Never spend a refresh token.** Re-read the credential file on every poll and
+let the vendor's own CLI or app own renewal. Refresh tokens rotate: spending one
 without writing the replacement back would break the user's *primary tool*, not
-just this dashboard. A stale token is a visible, recoverable failure; a consumed
-one is not.
+just this dashboard. The one automated recovery path still respects this rule:
+after a Claude `401`, the deck runs the official `claude update` command and
+accepts only a changed access token written by Claude Code itself.
 
 **Never hardcode a window period.** See §7. This is the most likely source of a
 wrong-but-plausible number.
@@ -186,6 +198,17 @@ only temporary acceptance, not equivalent rate-limit classification. A later
 same-account, same-time A/B test had the header-complete reference monitor
 succeed while the bare-header deck received 429; operationally the complete
 request identity is therefore required.
+
+### Rejected access tokens recover through Claude Code
+
+On `401`, the deck runs `claude update` invisibly with a 60-second timeout. It
+does not inspect command output and never reads the OAuth refresh token. If
+Claude Code replaces the rejected access token in `.credentials.json`, the deck
+rereads the file and retries the usage request once in the same refresh cycle.
+`claude update` may also update the installed CLI. If the CLI is unavailable,
+the token does not change, or the retry is rejected again, cached quota remains
+visible and the normal provider-local schedule retries later; the UI asks the
+user to open Claude Code only after this automatic path fails.
 
 > On macOS the credential lives in the Keychain instead. Out of scope; this is a
 > Windows app.
@@ -782,9 +805,10 @@ one dead card, never an empty dashboard.
 
 ## 11. When something breaks
 
-1. **Claude shows an auth error** → run Claude Code once and complete sign-in.
-   **Codex shows one** → open Codex Desktop and sign in. The deck never refreshes
-   either token itself (§2).
+1. **Claude shows an auth error** → automatic `claude update` already failed;
+   open Claude Code once and complete sign-in. **Codex shows one** → open Codex
+   Desktop and sign in. The deck never handles either provider's refresh token
+   itself (§2).
 2. **Codex card is stale but Claude is fine** → the usage endpoint changed.
    Re-check the three path variants in §4 before assuming anything deeper.
 3. **A window is labelled with the wrong period** → something hardcoded a slot

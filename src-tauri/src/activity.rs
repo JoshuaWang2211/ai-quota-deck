@@ -4,7 +4,7 @@
 
 use serde::Serialize;
 use std::time::Duration;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 pub const IDLE_PAUSE_SECONDS: u64 = 5 * 60;
 const ACTIVITY_PROBE_SECONDS: u64 = 5;
@@ -46,6 +46,7 @@ pub fn watch(app: tauri::AppHandle) {
             let just_resumed = was_away && !user_away;
             if just_resumed {
                 let _ = app.emit("system-activity-resumed", ());
+                restore_companion_after_resume(app.clone());
             }
             let (next_remaining, refresh_due) =
                 advance_refresh_tick(refresh_tick_remaining, user_away, just_resumed);
@@ -54,6 +55,19 @@ pub fn watch(app: tauri::AppHandle) {
                 let _ = app.emit("active-refresh-tick", ());
             }
             was_away = user_away;
+        }
+    });
+}
+
+fn restore_companion_after_resume(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        // Monitor enumeration often changes more than once while a laptop lid
+        // or external display wakes. Reapply the saved position after each
+        // settling window; the restore itself is a no-op while the user drags.
+        for delay in [2, 6, 12] {
+            std::thread::sleep(Duration::from_secs(delay));
+            let state = app.state::<crate::widget::WidgetState>();
+            let _ = crate::widget::restore_after_resume(&app, &state);
         }
     });
 }

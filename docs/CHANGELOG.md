@@ -4,6 +4,15 @@ All notable changes to AI Quota Deck are documented here.
 
 ---
 
+## v0.2.1 - 2026-08-11
+
+- Added automatic Claude OAuth recovery: after a rejected access token, the deck runs the official `claude update` command in the background, rereads Claude Code's credential file, and retries once.
+- Fixed Widget/Strip positions being overwritten or visually reset by Windows-generated moves, sleep/display wake-up, mixed-DPI monitor checks, or content-driven resizing.
+- Reasserted the saved companion position and always-on-top state while monitors settle after wake.
+- Removed Strip's accidental double-click mode switch; its dashboard button remains the explicit way to leave Strip view.
+
+---
+
 ## v0.2.0 - 2026-08-10
 
 - Replaced Mini mode with three focused views: Dashboard, an always-on-top Widget, and a compact movable Strip.

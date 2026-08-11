@@ -46,7 +46,7 @@ Dashboard 會顯示重置時間、使用速度、方案與快取狀態；Widget 
 - 淺色、深色與跟隨系統主題
 - 系統匣操作與選用的開機啟動
 - 服務或瀏覽器暫時無法使用時保留快取資料
-- Windows 閒置／鎖定時暫停 Claude Code 查詢，喚醒後稍候再更新，遇到 rate limit 時自動退避
+- Windows 閒置／鎖定時暫停 Claude Code 查詢，並透過官方 CLI 恢復過期 OAuth 連線；遇到 rate limit 時自動退避
 
 ---
 
@@ -54,7 +54,7 @@ Dashboard 會顯示重置時間、使用速度、方案與快取狀態；Widget 
 
 **系統需求：Windows 10 或 11。**
 
-1. [點此下載最新安裝檔](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.2.0_x64-setup.exe)。
+1. [點此下載最新安裝檔](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.2.1_x64-setup.exe)。
 2. 執行安裝檔，再啟動 **AI Quota Deck**。
 3. 關閉視窗會回到系統匣；左鍵點擊系統匣圖示即可重新開啟。
 
@@ -128,6 +128,8 @@ Gemini 與 Grok 必須透過隨附的 **AI Quota Deck Browser Bridge** 從瀏覽
 
 **Claude 在閒置或鎖定時沒有更新：** 這是刻意的節流。回來操作後會先等待約一分鐘再查詢，避免與剛恢復的 Claude Desktop 或 Claude Code 搶在同一時間連線；既有的 rate-limit 冷卻仍優先。
 
+**Claude 顯示 token rejected：** App 會在背景請已安裝的 Claude Code CLI 更新 token，然後自動重試。若仍失敗，再手動開啟一次 Claude Code。
+
 **Windows 顯示未知發行者：** 目前版本尚未加入程式碼簽章，請只從本專案的 GitHub Releases 頁面下載。
 
 ---
@@ -137,7 +139,7 @@ Gemini 與 Grok 必須透過隨附的 **AI Quota Deck Browser Bridge** 從瀏覽
 AI Quota Deck 沒有遙測，也不會上傳資料。
 
 - 使用支援的桌面 App 或 CLI 已儲存的登入資料。
-- 不會自行更新任何服務的 token。
+- 不會讀取或使用各服務的 refresh token。Claude 回傳 `401` 時，只會在背景執行官方 `claude update` 並重讀 access token；此指令也可能同時更新 Claude Code。
 - Bridge 只能讀取 `gemini.google.com` 與 `grok.com`。
 - 只有額度、重置時間、服務／帳號代號與觀測時間會傳到 App；Cookie 與頁面 token 留在瀏覽器中。
 

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI Quota Deck Browser Bridge",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Sends local Gemini and Grok quota snapshots to AI Quota Deck.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArRA01/EN1D1j3cA6u6j4xfoPhFtvslQbrd9I80q/vU7t/fcZD4rwtb5LCAyAKyWEjfcVE1fsMHBy0xMZw+5gMu3arZQQoPxk7ms14e1ZMHfdAJ2iMd254IdiL7yAa5KTZmtr7D0VV5cc4wuwh4Db9NrXm1APrR4hARtKxdiManEUWIJSWEoqGURHLS0FAN89npeKT0XUFqhAmGT/eAbSbd2C/hTW69filOeNdNtY0/pYCPgnaKhrHobmHNZSjXZ5bD//6Qwra5NTmJTQTekme/zgQ3mfQ5CLmMWwnpNaAbbRGSA9+vcr5vY8PCFIWy+Je/GgCwCpi091ldwTgxvv0QIDAQAB",
   "permissions": [

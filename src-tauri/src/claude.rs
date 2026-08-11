@@ -21,6 +21,7 @@ const PROFILE_URL: &str = "https://api.anthropic.com/api/oauth/profile";
 const ANTHROPIC_BETA: &str = "oauth-2025-04-20";
 const FALLBACK_CLAUDE_VERSION: &str = "2.1.204";
 const REQUEST_TIMEOUT_SECONDS: u64 = 10;
+const TOKEN_REFRESH_TIMEOUT_SECONDS: u64 = 60;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -68,6 +69,14 @@ impl FetchError {
             message,
             retry_after_seconds,
             rate_limited: true,
+        }
+    }
+
+    fn auth_rejected() -> Self {
+        Self {
+            message: "Claude Code could not refresh the rejected token automatically — open Claude Code once and try again".to_string(),
+            retry_after_seconds: None,
+            rate_limited: false,
         }
     }
 }
@@ -184,17 +193,21 @@ fn claude_cli_candidates() -> Vec<PathBuf> {
     candidates
 }
 
-fn cli_version(path: &std::path::Path) -> Option<String> {
+fn claude_command(path: &std::path::Path) -> Command {
     let is_cmd = path
         .extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("cmd"));
-    let mut command = if is_cmd {
+    if is_cmd {
         let mut command = Command::new("cmd.exe");
         command.args(["/D", "/C"]).arg(path);
         command
     } else {
         Command::new(path)
-    };
+    }
+}
+
+fn cli_version(path: &std::path::Path) -> Option<String> {
+    let mut command = claude_command(path);
     command
         .arg("--version")
         .stdout(Stdio::piped())
@@ -216,6 +229,65 @@ fn cli_version(path: &std::path::Path) -> Option<String> {
         }
         std::thread::sleep(Duration::from_millis(50));
     }
+}
+
+/// Ask the official Claude Code CLI to rotate its own OAuth access token.
+///
+/// The deck never reads or spends the refresh token. `claude update` owns that
+/// credential lifecycle; after it exits, the only success signal we trust is a
+/// changed access token in Claude Code's credential file. All command output is
+/// discarded so neither provider details nor local paths reach the deck UI.
+fn refresh_access_token(rejected_token: &str) -> bool {
+    let Some(path) = claude_cli_candidates()
+        .into_iter()
+        .find(|path| path.is_file())
+    else {
+        return false;
+    };
+
+    let mut command = claude_command(&path);
+    command
+        .arg("update")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(target_os = "windows")]
+    command.creation_flags(CREATE_NO_WINDOW);
+
+    let Ok(mut child) = command.spawn() else {
+        return false;
+    };
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if started.elapsed() < Duration::from_secs(TOKEN_REFRESH_TIMEOUT_SECONDS) => {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+        }
+    }
+
+    read_credentials().is_ok_and(|credentials| credentials.oauth.access_token != rejected_token)
+}
+
+fn read_credentials() -> Result<Credentials, FetchError> {
+    let path = credentials_path()
+        .ok_or_else(|| FetchError::plain("could not locate the home directory"))?;
+    let raw = std::fs::read_to_string(&path).map_err(|error| {
+        FetchError::plain(format!(
+            "cannot read {} — is Claude Code installed and signed in? ({error})",
+            path.display()
+        ))
+    })?;
+    // serde_json errors carry a position, not file content, so this is safe to
+    // surface. Nothing below may ever interpolate the token itself.
+    serde_json::from_str(&raw).map_err(|error| {
+        FetchError::plain(format!("unexpected shape in .credentials.json: {error}"))
+    })
 }
 
 fn claude_user_agent() -> &'static str {
@@ -530,55 +602,58 @@ pub async fn fetch() -> ProviderQuota {
 }
 
 async fn try_fetch() -> Result<ProviderQuota, FetchError> {
-    let path = credentials_path()
-        .ok_or_else(|| FetchError::plain("could not locate the home directory"))?;
-    let raw = std::fs::read_to_string(&path).map_err(|e| {
-        FetchError::plain(format!(
-            "cannot read {} — is Claude Code installed and signed in? ({e})",
-            path.display()
-        ))
-    })?;
-    // serde_json errors carry a position, not file content, so this is safe to
-    // surface. Nothing below may ever interpolate the token itself.
-    let creds: Credentials = serde_json::from_str(&raw)
-        .map_err(|e| FetchError::plain(format!("unexpected shape in .credentials.json: {e}")))?;
-
+    let mut creds = read_credentials()?;
     let client = claude_client()
         .map_err(|error| FetchError::plain(format!("could not build HTTP client: {error}")))?;
-    let response = api_request(
-        &client,
-        USAGE_URL,
-        &creds.oauth.access_token,
-        claude_user_agent(),
-    )
-    .send()
-    .await
-    .map_err(|e| FetchError::plain(format!("request to the usage endpoint failed: {e}")))?;
-
-    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-        return Err(FetchError::plain(
-            "token rejected — run Claude Code once so it can refresh",
-        ));
-    }
-    if !response.status().is_success() {
-        let status = response.status();
-        let retry_after_seconds = response
-            .headers()
-            .get(reqwest::header::RETRY_AFTER)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse::<u64>().ok());
-        let message = http_failure(status, "the Claude usage endpoint");
-        return Err(if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            FetchError::rate_limited(message, retry_after_seconds)
-        } else {
-            FetchError::plain(message)
-        });
-    }
-
-    let body: UsageResponse = response
-        .json()
+    let mut automatic_refresh_attempted = false;
+    let body: UsageResponse = loop {
+        let response = api_request(
+            &client,
+            USAGE_URL,
+            &creds.oauth.access_token,
+            claude_user_agent(),
+        )
+        .send()
         .await
-        .map_err(|e| FetchError::plain(format!("could not parse the usage response: {e}")))?;
+        .map_err(|error| {
+            FetchError::plain(format!("request to the usage endpoint failed: {error}"))
+        })?;
+
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            if automatic_refresh_attempted {
+                return Err(FetchError::auth_rejected());
+            }
+            automatic_refresh_attempted = true;
+            let rejected_token = creds.oauth.access_token.clone();
+            let refreshed =
+                tauri::async_runtime::spawn_blocking(move || refresh_access_token(&rejected_token))
+                    .await
+                    .unwrap_or(false);
+            if !refreshed {
+                return Err(FetchError::auth_rejected());
+            }
+            creds = read_credentials()?;
+            continue;
+        }
+        if !response.status().is_success() {
+            let status = response.status();
+            let retry_after_seconds = response
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse::<u64>().ok());
+            let message = http_failure(status, "the Claude usage endpoint");
+            return Err(if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                FetchError::rate_limited(message, retry_after_seconds)
+            } else {
+                FetchError::plain(message)
+            });
+        }
+
+        break response.json().await.map_err(|error| {
+            FetchError::plain(format!("could not parse the usage response: {error}"))
+        })?;
+    };
 
     if body.limits.is_empty() {
         // The call worked; there is simply nothing metered on this plan.
