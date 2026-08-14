@@ -201,14 +201,16 @@ request identity is therefore required.
 
 ### Rejected access tokens recover through Claude Code
 
-On `401`, the deck runs `claude update` invisibly with a 60-second timeout. It
-does not inspect command output and never reads the OAuth refresh token. If
+On `401`, the deck runs `claude update` invisibly and waits up to 60 seconds.
+It does not inspect command output and never reads the OAuth refresh token. If
 Claude Code replaces the rejected access token in `.credentials.json`, the deck
 rereads the file and retries the usage request once in the same refresh cycle.
-`claude update` may also update the installed CLI. If the CLI is unavailable,
-the token does not change, or the retry is rejected again, cached quota remains
-visible and the normal provider-local schedule retries later; the UI asks the
-user to open Claude Code only after this automatic path fails.
+`claude update` may also replace the installed CLI, so an updater that outlives
+the wait is left to finish rather than killed mid-replace, and a second one is
+never started while the first still runs. If the CLI is unavailable, the token
+does not change, or the retry is rejected again, cached quota remains visible,
+the UI asks the user to open Claude Code, and the automatic path stays quiet
+for an hour before it may try again.
 
 > On macOS the credential lives in the Keychain instead. Out of scope; this is a
 > Windows app.
@@ -413,10 +415,14 @@ Authorization: Bearer <key>
 ```
 
 Token: `~/.grok/auth.json`, written by Grok Build. The file is keyed by
-`"<oidc_issuer>::<client_id>"`, so read the single entry rather than a fixed key
-path; the token itself is the `key` field. A JWT from `https://auth.x.ai` with a
-**six-hour** lifetime — much shorter than Claude's or Codex's, so a stale-token
-path will be exercised often. `expires_at` sits alongside it.
+`"<oidc_issuer>::<client_id>"`, so read entries by value rather than a fixed key
+path; the token itself is the `key` field. Signing in to a second account adds a
+second entry: the deck prefers a still-usable credential — an expired one can
+never serve a request, and a missing `expires_at` means "not known to be
+expired", not "oldest" — then the furthest expiry among those. A JWT from
+`https://auth.x.ai` with a **six-hour** lifetime — much shorter than Claude's or
+Codex's, so a stale-token path will be exercised often. `expires_at` sits
+alongside it.
 
 The CLI is not a daemon. It refreshes only while it is running, shortly before
 expiry or after a 401. The deck must never spend the `refresh_token`: rotation
