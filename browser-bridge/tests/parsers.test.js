@@ -72,7 +72,31 @@ assert.deepEqual(AiQuotaDeckGrokParser.readPaidUsage(decodedFrame), {
   ]
 });
 
+// A config whose known fields all fail to decode is schema drift, not 0% usage:
+// pushing a fabricated 0% would overwrite a real snapshot in the on-disk cache.
 const untouched = AiQuotaDeckGrokParser.decodeProto(new Uint8Array(lenField(1, [])));
-assert.equal(AiQuotaDeckGrokParser.readPaidUsage(untouched).used, 0);
+assert.equal(AiQuotaDeckGrokParser.readPaidUsage(untouched), null);
+
+// But a genuine 0% is real: proto3 omits zero-valued scalars, so an untouched
+// account sends no usage field while the period end still decodes.
+const zeroUsage = AiQuotaDeckGrokParser.decodeProto(
+  new Uint8Array(lenField(1, lenField(5, varintField(1, 1800604800))))
+);
+assert.deepEqual(AiQuotaDeckGrokParser.readPaidUsage(zeroUsage), {
+  used: 0,
+  resetAt: 1800604800000,
+  products: []
+});
+
+// Product entries that decode are themselves proof the schema holds, even when
+// every percent is 0 (and so gets filtered from the breakdown).
+const zeroProducts = AiQuotaDeckGrokParser.decodeProto(
+  new Uint8Array(lenField(1, lenField(7, varintField(1, 4))))
+);
+assert.deepEqual(AiQuotaDeckGrokParser.readPaidUsage(zeroProducts), {
+  used: 0,
+  resetAt: null,
+  products: []
+});
 
 console.log('stable extension id and Gemini/Grok parsers: ok');

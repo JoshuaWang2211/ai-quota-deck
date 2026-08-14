@@ -25,6 +25,17 @@ const BROWSER_CLOCK_SKEW_SECONDS: i64 = 60;
 /// perfectly reasonable in isolation.
 const USAGE_PATH: &str = "/billing?format=credits";
 
+/// The dashboard waits on every provider before it repaints, so a request that
+/// never answers would freeze the whole refresh cycle, not just this card.
+const REQUEST_TIMEOUT_SECONDS: u64 = 10;
+
+fn usage_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECONDS))
+        .build()
+        .map_err(|e| format!("could not build HTTP client: {e}"))
+}
+
 fn base_url() -> String {
     std::env::var("GROK_CLI_CHAT_PROXY_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.to_string())
 }
@@ -132,15 +143,24 @@ fn period_label(raw: &str) -> String {
     }
 }
 
-/// Pick the credential with the furthest-out expiry.
+/// Pick the credential most likely to be the active session.
 ///
 /// Signing in to a second account adds a second entry, and map iteration order
 /// is not stable — taking whichever came first would make the card flip between
-/// accounts between polls. The freshest token is the active session.
-fn newest_credential(entries: HashMap<String, AuthEntry>) -> Option<AuthEntry> {
+/// accounts between polls. An entry that is already expired can never serve a
+/// request, so any still-usable one outranks it; a missing `expires_at` means
+/// "not known to be expired", not "oldest". Among usable entries the furthest
+/// expiry is the freshest sign-in, and the map key breaks ties so the choice is
+/// stable between polls.
+fn newest_credential(entries: HashMap<String, AuthEntry>, current_time: i64) -> Option<AuthEntry> {
     entries
-        .into_values()
-        .max_by_key(|entry| entry.expires_at.as_deref().and_then(rfc3339_to_unix))
+        .into_iter()
+        .max_by_key(|(key, entry)| {
+            let expires_at = entry.expires_at.as_deref().and_then(rfc3339_to_unix);
+            let usable = expires_at.is_none_or(|at| at > current_time);
+            (usable, expires_at, key.clone())
+        })
+        .map(|(_, entry)| entry)
 }
 
 pub async fn fetch() -> ProviderQuota {
@@ -204,7 +224,7 @@ async fn try_fetch() -> Result<ProviderQuota, String> {
     })?;
     let entries: HashMap<String, AuthEntry> =
         serde_json::from_str(&raw).map_err(|e| format!("unexpected shape in auth.json: {e}"))?;
-    let credential = newest_credential(entries).ok_or("auth.json held no credentials")?;
+    let credential = newest_credential(entries, now()).ok_or("auth.json held no credentials")?;
 
     if credential
         .expires_at
@@ -215,7 +235,7 @@ async fn try_fetch() -> Result<ProviderQuota, String> {
         return Ok(expired_token());
     }
 
-    let response = reqwest::Client::new()
+    let response = usage_client()?
         .get(format!("{}{}", base_url(), USAGE_PATH))
         .bearer_auth(&credential.key)
         .send()
@@ -243,7 +263,8 @@ async fn try_fetch() -> Result<ProviderQuota, String> {
         // does not cover.
         return Ok(ProviderQuota::unavailable(
             PROVIDER,
-            "No subscription quota on this account. Free Grok is metered by daily queries,              which this endpoint does not report.",
+            "No subscription quota on this account. Free Grok is metered by daily queries, \
+             which this endpoint does not report.",
         ));
     };
 
@@ -434,14 +455,51 @@ mod tests {
                                         "expires_at": "2026-06-01T00:00:00Z" }
         }"#;
         let entries: HashMap<String, AuthEntry> = serde_json::from_str(json).unwrap();
-        assert_eq!(newest_credential(entries).unwrap().key, "fresh-token");
+        let before_both = rfc3339_to_unix("2025-12-01T00:00:00Z").unwrap();
+        assert_eq!(
+            newest_credential(entries, before_both).unwrap().key,
+            "fresh-token"
+        );
     }
 
     #[test]
     fn survives_a_credential_with_no_expiry() {
         let json = r#"{ "only": { "key": "the-token" } }"#;
         let entries: HashMap<String, AuthEntry> = serde_json::from_str(json).unwrap();
-        assert_eq!(newest_credential(entries).unwrap().key, "the-token");
+        assert_eq!(newest_credential(entries, 0).unwrap().key, "the-token");
+    }
+
+    #[test]
+    fn a_usable_credential_without_expiry_beats_an_expired_one_with_a_timestamp() {
+        // `None < Some(_)` must not decide this: the timestamped entry is dead,
+        // the undated one is the only credential that can still work.
+        let json = r#"{
+            "https://auth.x.ai::expired": { "key": "dead-token",
+                                            "expires_at": "2026-01-01T00:00:00Z" },
+            "https://auth.x.ai::open":    { "key": "live-token" }
+        }"#;
+        let entries: HashMap<String, AuthEntry> = serde_json::from_str(json).unwrap();
+        let after_expiry = rfc3339_to_unix("2026-03-01T00:00:00Z").unwrap();
+        assert_eq!(
+            newest_credential(entries, after_expiry).unwrap().key,
+            "live-token"
+        );
+    }
+
+    #[test]
+    fn a_future_expiry_beats_an_expired_one() {
+        let json = r#"{
+            "https://auth.x.ai::expired": { "key": "dead-token",
+                                            "expires_at": "2026-01-01T00:00:00Z" },
+            "https://auth.x.ai::live":    { "key": "live-token",
+                                            "expires_at": "2026-06-01T00:00:00Z" }
+        }"#;
+        let entries: HashMap<String, AuthEntry> = serde_json::from_str(json).unwrap();
+        let between = rfc3339_to_unix("2026-03-01T00:00:00Z").unwrap();
+        assert_eq!(
+            newest_credential(entries, between).unwrap().key,
+            "live-token"
+        );
     }
 
     #[test]

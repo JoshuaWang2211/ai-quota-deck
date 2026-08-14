@@ -77,9 +77,6 @@
     if (!configBytes) return null;
     const config = decodeProto(configBytes);
 
-    const usedRaw = first(config, USAGE_PERCENT_FIELD);
-    const used = Number.isFinite(usedRaw) ? Math.max(0, Math.min(100, usedRaw)) : 0;
-
     let resetAt = null;
     const periodEnd = first(config, PERIOD_END_FIELD);
     if (periodEnd) {
@@ -87,6 +84,9 @@
       if (Number.isFinite(seconds) && seconds > 0) resetAt = seconds * 1000;
     }
 
+    // Field presence, before the percent > 0 filter below: a product entry that
+    // decodes is proof the schema still holds even when every percent is 0.
+    const hasProductField = (config[PRODUCT_USAGE_FIELD] || []).length > 0;
     const products = (config[PRODUCT_USAGE_FIELD] || [])
       .map((entry) => {
         const product = decodeProto(entry);
@@ -100,6 +100,16 @@
       })
       .filter((product) => product.percent > 0)
       .sort((a, b) => b.percent - a.percent);
+
+    // proto3 omits zero-valued scalars, so a missing usage field can be a real
+    // 0% — but only while the rest of the config still decodes. When nothing
+    // recognizable is left the schema has drifted: report failure rather than
+    // hand back a fabricated 0% that would replace a real snapshot downstream.
+    const usedRaw = first(config, USAGE_PERCENT_FIELD);
+    if (!Number.isFinite(usedRaw) && resetAt === null && !hasProductField) {
+      return null;
+    }
+    const used = Number.isFinite(usedRaw) ? Math.max(0, Math.min(100, usedRaw)) : 0;
 
     return { used, resetAt, products };
   }

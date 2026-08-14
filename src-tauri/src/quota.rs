@@ -17,8 +17,8 @@ pub struct QuotaWindow {
     pub resets_at: Option<i64>,
     /// How long the whole window runs, in seconds, when the provider reports it.
     /// With this and `resets_at` the dashboard can show how far through the
-    /// window you are, not just how much you have spent. Claude sends no
-    /// duration, so its rows simply go without.
+    /// window you are, not just how much you have spent. Claude does not send a
+    /// duration on the wire; claude.rs derives one from the window kind.
     pub window_seconds: Option<i64>,
     /// The provider's own severity hint, where it offers one. Preferred over
     /// thresholds invented here — the provider knows what "close to the limit"

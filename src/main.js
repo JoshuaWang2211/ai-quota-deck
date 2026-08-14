@@ -14,11 +14,10 @@ const PROVIDERS = [
     command: "claude_quota",
     setup: "Run Claude Code and sign in once.",
     // Claude's undocumented endpoint is more sensitive than the other sources.
-    // Poll conservatively while active and cap 429 backoff at 15 minutes.
+    // Poll conservatively while active; the 429 cooldown itself is owned by the
+    // Rust side (claude-rate-limit.json) and arrives as retry_after_seconds.
     pollMs: 360_000,
     pauseWhileAway: true,
-    rateLimitBackoffMs: [180_000, 360_000, 720_000, 900_000],
-    maxRateLimitBackoffMs: 900_000,
   },
   {
     id: "codex",
@@ -41,7 +40,6 @@ const PROVIDERS = [
     optional: true,
   },
 ];
-const BROWSER_PROVIDERS = PROVIDERS.filter(({ id }) => id === "gemini" || id === "grok");
 
 // Three minutes, matching the sibling Claude tray tool's default. Reading a
 // quota costs no quota, so the only cost is request volume against four
@@ -186,7 +184,7 @@ function meterVar(percent, severity) {
 }
 
 /** How far through the window we are, as a percentage. Needs both a duration
- *  and an end; Claude reports no duration, so its rows get no pace mark. */
+ *  and an end; a row lacking either gets no pace mark. */
 function pacePercent(window_) {
   const { window_seconds: length, resets_at: end } = window_;
   if (!length || !end) return null;

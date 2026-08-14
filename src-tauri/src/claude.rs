@@ -40,9 +40,19 @@ const SNAPSHOT_MAX_AGE_SECONDS: i64 = 24 * 60 * 60;
 /// success so the frontend does not accidentally clear its backoff state.
 const RATE_LIMIT_MIN_RETRY_SECONDS: u64 = 3 * 60;
 const RATE_LIMIT_MAX_RETRY_SECONDS: u64 = 15 * 60;
+/// `claude update` checks for, downloads and replaces the whole CLI install —
+/// it must not run again every poll while the refresh token is truly dead. A
+/// fresh sign-in rotates the credential file directly, which the next poll
+/// reads without needing this path at all.
+const TOKEN_REFRESH_RETRY_SECONDS: i64 = 60 * 60;
 
 static PLAN_CACHE: Mutex<Option<CachedPlan>> = Mutex::new(None);
 static CLAUDE_USER_AGENT: OnceLock<String> = OnceLock::new();
+static LAST_FAILED_TOKEN_REFRESH: Mutex<Option<i64>> = Mutex::new(None);
+/// An updater that outlived its timeout is parked here instead of killed, so a
+/// later attempt can reap it — and refuses to start a second one against the
+/// same install while it is still running.
+static PENDING_TOKEN_REFRESH: Mutex<Option<std::process::Child>> = Mutex::new(None);
 
 struct CachedPlan {
     plan: Option<String>,
@@ -206,6 +216,21 @@ fn claude_command(path: &std::path::Path) -> Command {
     }
 }
 
+/// Poll `child` until it exits or `timeout` passes. Returns whether it exited;
+/// one that is still running is left for the caller to kill or disown.
+fn wait_child(child: &mut std::process::Child, timeout: Duration) -> bool {
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return true,
+            Ok(None) if started.elapsed() < timeout => {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            _ => return false,
+        }
+    }
+}
+
 fn cli_version(path: &std::path::Path) -> Option<String> {
     let mut command = claude_command(path);
     command
@@ -216,19 +241,13 @@ fn cli_version(path: &std::path::Path) -> Option<String> {
     command.creation_flags(CREATE_NO_WINDOW);
 
     let mut child = command.spawn().ok()?;
-    let started = Instant::now();
-    loop {
-        if child.try_wait().ok()?.is_some() {
-            let output = child.wait_with_output().ok()?;
-            return parse_cli_version(&String::from_utf8_lossy(&output.stdout));
-        }
-        if started.elapsed() >= Duration::from_secs(REQUEST_TIMEOUT_SECONDS) {
-            let _ = child.kill();
-            let _ = child.wait();
-            return None;
-        }
-        std::thread::sleep(Duration::from_millis(50));
+    if !wait_child(&mut child, Duration::from_secs(REQUEST_TIMEOUT_SECONDS)) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return None;
     }
+    let output = child.wait_with_output().ok()?;
+    parse_cli_version(&String::from_utf8_lossy(&output.stdout))
 }
 
 /// Ask the official Claude Code CLI to rotate its own OAuth access token.
@@ -238,6 +257,18 @@ fn cli_version(path: &std::path::Path) -> Option<String> {
 /// changed access token in Claude Code's credential file. All command output is
 /// discarded so neither provider details nor local paths reach the deck UI.
 fn refresh_access_token(rejected_token: &str) -> bool {
+    let Ok(mut pending) = PENDING_TOKEN_REFRESH.lock() else {
+        return false;
+    };
+    if let Some(child) = pending.as_mut() {
+        match child.try_wait() {
+            Ok(Some(_)) => *pending = None,
+            // Still replacing files, or unknowable — either way, do not start a
+            // second updater against the same install.
+            _ => return false,
+        }
+    }
+
     let Some(path) = claude_cli_candidates()
         .into_iter()
         .find(|path| path.is_file())
@@ -256,22 +287,32 @@ fn refresh_access_token(rejected_token: &str) -> bool {
     let Ok(mut child) = command.spawn() else {
         return false;
     };
-    let started = Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) if started.elapsed() < Duration::from_secs(TOKEN_REFRESH_TIMEOUT_SECONDS) => {
-                std::thread::sleep(Duration::from_millis(100));
-            }
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return false;
-            }
-        }
+    if !wait_child(
+        &mut child,
+        Duration::from_secs(TOKEN_REFRESH_TIMEOUT_SECONDS),
+    ) {
+        // Parked rather than killed on purpose: an updater interrupted while
+        // replacing files can leave a broken CLI install behind. Let it finish
+        // on its own; the next attempt reaps it above before starting another.
+        *pending = Some(child);
+        return false;
     }
 
     read_credentials().is_ok_and(|credentials| credentials.oauth.access_token != rejected_token)
+}
+
+fn recent_refresh_failure() -> bool {
+    LAST_FAILED_TOKEN_REFRESH
+        .lock()
+        .ok()
+        .and_then(|guard| *guard)
+        .is_some_and(|at| now() - at < TOKEN_REFRESH_RETRY_SECONDS)
+}
+
+fn record_refresh_failure() {
+    if let Ok(mut guard) = LAST_FAILED_TOKEN_REFRESH.lock() {
+        *guard = Some(now());
+    }
 }
 
 fn read_credentials() -> Result<Credentials, FetchError> {
@@ -605,22 +646,22 @@ async fn try_fetch() -> Result<ProviderQuota, FetchError> {
     let mut creds = read_credentials()?;
     let client = claude_client()
         .map_err(|error| FetchError::plain(format!("could not build HTTP client: {error}")))?;
+    // First use scans the CLI on disk for its version — child processes and
+    // sleeps. Off the async runtime, same as refresh_access_token below.
+    let user_agent = tauri::async_runtime::spawn_blocking(claude_user_agent)
+        .await
+        .unwrap_or_else(|_| claude_user_agent());
     let mut automatic_refresh_attempted = false;
     let body: UsageResponse = loop {
-        let response = api_request(
-            &client,
-            USAGE_URL,
-            &creds.oauth.access_token,
-            claude_user_agent(),
-        )
-        .send()
-        .await
-        .map_err(|error| {
-            FetchError::plain(format!("request to the usage endpoint failed: {error}"))
-        })?;
+        let response = api_request(&client, USAGE_URL, &creds.oauth.access_token, user_agent)
+            .send()
+            .await
+            .map_err(|error| {
+                FetchError::plain(format!("request to the usage endpoint failed: {error}"))
+            })?;
 
         if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-            if automatic_refresh_attempted {
+            if automatic_refresh_attempted || recent_refresh_failure() {
                 return Err(FetchError::auth_rejected());
             }
             automatic_refresh_attempted = true;
@@ -630,6 +671,7 @@ async fn try_fetch() -> Result<ProviderQuota, FetchError> {
                     .await
                     .unwrap_or(false);
             if !refreshed {
+                record_refresh_failure();
                 return Err(FetchError::auth_rejected());
             }
             creds = read_credentials()?;

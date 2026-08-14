@@ -21,6 +21,17 @@ const USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
 /// rather than walk an unbounded archive.
 const MAX_SESSION_FILES_SCANNED: usize = 20;
 
+/// The dashboard waits on every provider before it repaints, so a request that
+/// never answers would freeze the whole refresh cycle, not just this card.
+const REQUEST_TIMEOUT_SECONDS: u64 = 10;
+
+fn usage_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECONDS))
+        .build()
+        .map_err(|e| format!("could not build HTTP client: {e}"))
+}
+
 fn codex_home() -> Option<PathBuf> {
     if let Some(dir) = std::env::var_os("CODEX_HOME") {
         return Some(PathBuf::from(dir));
@@ -151,7 +162,7 @@ async fn live() -> Result<ProviderQuota, String> {
     let auth: Auth =
         serde_json::from_str(&raw).map_err(|e| format!("unexpected shape in auth.json: {e}"))?;
 
-    let response = reqwest::Client::new()
+    let response = usage_client()?
         .get(USAGE_URL)
         .bearer_auth(&auth.tokens.access_token)
         .send()

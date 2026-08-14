@@ -132,7 +132,19 @@ fn write_cache(push: &BrowserPush) -> Result<(), String> {
         .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
     let bytes = serde_json::to_vec(push)
         .map_err(|error| format!("cannot serialize browser cache: {error}"))?;
-    fs::write(&path, bytes).map_err(|error| format!("cannot write {}: {error}", path.display()))
+    // Several host processes (one per connected browser and extension) write
+    // this file while the dashboard reads it. A plain truncate-then-write lets
+    // a reader observe an empty or half-written file — which also defeats the
+    // free_push_would_bury_paid check above, because an unparsable "existing"
+    // reads as "no paid snapshot to protect". Write aside and rename so every
+    // observer sees either the old bytes or the new ones, never a mix.
+    let staging = path.with_extension(format!("tmp-{}", std::process::id()));
+    fs::write(&staging, bytes)
+        .map_err(|error| format!("cannot write {}: {error}", staging.display()))?;
+    fs::rename(&staging, &path).map_err(|error| {
+        let _ = fs::remove_file(&staging);
+        format!("cannot replace {}: {error}", path.display())
+    })
 }
 
 fn read_frame(reader: &mut impl Read) -> io::Result<Option<Vec<u8>>> {

@@ -14,11 +14,7 @@ import {
 } from "../src/widget-model.js";
 
 const defaults = [60_000, 120_000, 300_000];
-const claude = {
-  pollMs: 360_000,
-  rateLimitBackoffMs: [180_000, 360_000, 720_000, 900_000],
-  maxRateLimitBackoffMs: 900_000,
-};
+const claude = { pollMs: 360_000 };
 
 test("Claude pauses at five idle minutes and immediately on lock", () => {
   assert.equal(isUserAway({ idle_seconds: 299, workstation_locked: false }, 300), false);
@@ -38,22 +34,28 @@ test("a timer delayed by sleep is treated as a resume instead of an immediate Cl
   assert.equal(missedRefreshCycle(500_000, null, 180_000), false);
 });
 
-test("cached Claude rows preserve the 429 backoff", () => {
-  const cached = { status: "ok", retry_after_seconds: 180 };
-  assert.equal(providerRetryDelay(cached, claude, 0, defaults), 360_000);
-  assert.equal(providerRetryDelay(cached, claude, 1, defaults), 360_000);
-  assert.equal(providerRetryDelay(cached, claude, 2, defaults), 720_000);
-  assert.equal(providerRetryDelay(cached, claude, 3, defaults), 900_000);
+test("cached Claude rows follow the cooldown the backend reports", () => {
+  // The Rust side escalates 3/6/12/15 minutes across repeated 429s and reports
+  // what is left; the frontend adds no schedule of its own on top. The poll
+  // floor only keeps a short remainder from re-polling faster than a healthy
+  // cycle would.
+  const cooldownStart = { status: "ok", retry_after_seconds: 180 };
+  assert.equal(providerRetryDelay(cooldownStart, claude, 0, defaults), 360_000);
+  assert.equal(providerRetryDelay(cooldownStart, claude, 3, defaults), 360_000);
+  assert.equal(
+    providerRetryDelay({ status: "ok", retry_after_seconds: 720 }, claude, 0, defaults),
+    720_000,
+  );
 });
 
-test("Retry-After is honored within the fifteen-minute ceiling", () => {
+test("Retry-After is honored as given, above the poll floor", () => {
   assert.equal(
     providerRetryDelay({ status: "ok", retry_after_seconds: 420 }, claude, 0, defaults),
     420_000,
   );
   assert.equal(
     providerRetryDelay({ status: "error", retry_after_seconds: 3600 }, claude, 0, defaults),
-    900_000,
+    3_600_000,
   );
 });
 

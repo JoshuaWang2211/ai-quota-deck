@@ -4,6 +4,17 @@ All notable changes to AI Quota Deck are documented here.
 
 ---
 
+## v0.2.2 - 2026-08-14
+
+- Added a 10-second timeout to the Codex and Grok network requests. A single stalled provider request could previously freeze the whole refresh cycle indefinitely.
+- Hardened the Grok browser parser: a paid-usage response whose fields no longer decode is discarded instead of overwriting a real snapshot with a fabricated 0%. A genuine 0% (fresh account, new period) still lands.
+- Made browser-cache writes atomic (write-aside and rename), so concurrent extension pushes and dashboard reads can no longer observe a half-written file — which could also bypass the free-tier/paid-snapshot protection.
+- Fixed Grok Build credential selection: a still-usable sign-in is no longer outranked by an expired entry that happens to carry a timestamp.
+- Moved Claude's first CLI version scan off the async runtime, and stopped killing a still-running `claude update` mid-replace; a failed automatic token refresh now waits an hour before the updater may run again.
+- The dashboard now honors the 429 cooldown reported by the backend directly instead of keeping a duplicate backoff table.
+
+---
+
 ## v0.2.1 - 2026-08-11
 
 - Added automatic Claude OAuth recovery: after a rejected access token, the deck runs the official `claude update` command in the background, rereads Claude Code's credential file, and retries once.

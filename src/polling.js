@@ -19,14 +19,15 @@ export function providerRetryDelay(result, provider, failures, defaultBackoffMs)
 
   if (result?.status !== "error" && !rateLimited) return null;
 
-  const backoff = rateLimited ? provider.rateLimitBackoffMs ?? defaultBackoffMs : defaultBackoffMs;
-  let delay = Math.max(
-    backoff[Math.min(failures, backoff.length - 1)],
-    rateLimited ? Math.max(retryAfterSeconds, 0) * 1000 : 0,
+  // The backend owns the 429 cooldown — for Claude it escalates and persists it
+  // in claude-rate-limit.json — and reports how long is left. No second table
+  // here; the provider's own poll floor just keeps the retry no more eager
+  // than a healthy poll.
+  if (rateLimited) {
+    return Math.max(Math.max(retryAfterSeconds, 0) * 1000, provider.pollMs ?? 0);
+  }
+  return Math.max(
+    defaultBackoffMs[Math.min(failures, defaultBackoffMs.length - 1)],
     provider.pollMs ?? 0,
   );
-  if (rateLimited && provider.maxRateLimitBackoffMs) {
-    delay = Math.min(delay, provider.maxRateLimitBackoffMs);
-  }
-  return delay;
 }
