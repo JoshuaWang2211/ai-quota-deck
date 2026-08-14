@@ -54,7 +54,7 @@ Dashboard 會顯示重置時間、使用速度、方案與快取狀態；Widget 
 
 **系統需求：Windows 10 或 11。**
 
-1. [點此下載最新安裝檔](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.2.1_x64-setup.exe)。
+1. [點此下載最新安裝檔](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.2.2_x64-setup.exe)。
 2. 執行安裝檔，再啟動 **AI Quota Deck**。
 3. 關閉視窗會回到系統匣；左鍵點擊系統匣圖示即可重新開啟。
 
