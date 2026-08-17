@@ -103,6 +103,19 @@ body {
   place-items: center;
 }
 
+#taskbar-overlay {
+  display: none;
+}
+
+:root[data-mode="strip"] #taskbar-overlay {
+  display: grid;
+}
+
+:root[data-taskbar-overlay="true"] #taskbar-overlay {
+  background: var(--hover);
+  color: var(--ok);
+}
+
 .widget-controls button:hover {
   background: var(--hover);
   color: var(--title);

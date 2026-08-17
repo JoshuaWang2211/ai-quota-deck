@@ -42,11 +42,13 @@ Other features:
 
 - Dashboard, Widget, and Strip views
 - Always-on-top widget with a remembered, lockable position
-- Compact horizontal strip that can be placed anywhere on screen
+- Compact horizontal strip that can float anywhere or pin above the Windows taskbar without reserving work area
 - Light, dark, and system themes
 - Windows tray controls and optional launch at startup
 - Cached readings when a provider or browser is temporarily unavailable
 - Claude Code polling pauses while Windows is idle or locked, recovers expired OAuth sessions through the official CLI, and backs off safely after rate limits
+In Strip view, click the pin-shaped taskbar button, then drag the Strip to any free part of the taskbar. It yields while the taskbar is auto-hidden or another app is full-screen.
+
 
 ---
 
@@ -54,7 +56,7 @@ Other features:
 
 **Requires Windows 10 or 11.**
 
-1. [Download the latest installer](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.2.2_x64-setup.exe).
+1. [Download the latest installer](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.2.3_x64-setup.exe).
 2. Run it, then launch **AI Quota Deck**.
 3. Close the window to return it to the system tray; left-click the tray icon to reopen it.
 
@@ -124,9 +126,9 @@ If you only need to check Gemini or Grok usage without running the desktop app, 
 
 **Browser data is stale:** open the matching tab and allow up to three minutes. The browser, bridge, tab, and tray app must all be running.
 
-**Claude is rate limited:** the cached card shows the cause and retry countdown. The deadline survives app restarts, and a recent successful reading remains visible.
+**Claude is rate limited:** the cached card shows the countdown. The deck honors the full server cooldown across restarts; new Claude Code credentials clear a deadline tied to the old sign-in.
 
-**Claude did not update while idle or locked:** this is intentional. After you return, the app waits about one minute before checking so it does not race Claude Desktop or Claude Code during wake-up. An existing rate-limit cooldown still takes priority.
+**Claude did not update while idle or locked:** this is intentional. After you return, the app waits about two minutes before checking so it does not race Claude Desktop or Claude Code during wake-up. An existing rate-limit cooldown still takes priority.
 
 **Claude reports a rejected token:** the deck asks the installed Claude Code CLI to refresh it in the background, then retries automatically. If that fails, open Claude Code once.
 

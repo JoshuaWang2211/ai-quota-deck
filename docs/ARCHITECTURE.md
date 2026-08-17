@@ -76,8 +76,9 @@ Widget and Strip reuse one frameless, always-on-top Tauri window that skips the
 taskbar. Widget presents a narrow vertical table; Strip turns the same data into
 a compact horizontal bar. Both can be dragged anywhere and remember independent
 screen positions. Widget's lock blocks movement while leaving its controls
-available, so the same button can unlock it. Strip remains freely movable and
-never reserves or changes the Windows work area.
+available, so the same button can unlock it. Strip remains freely movable. Its
+optional pin button enables a Windows-only Taskbar overlay without registering
+an AppBar, so it never reserves or changes the Windows work area.
 
 The companion window never calls a provider command. The hidden main dashboard
 remains the sole scheduler and sends quota-only snapshots through targeted Tauri
@@ -85,13 +86,30 @@ events. A native active-only tick prevents a due three-minute cycle from being
 stranded by a throttled hidden WebView; request floors and backoff remain in
 control. Neither companion view adds Claude, Codex, Gemini, or Grok requests.
 
-Selected view, Widget lock state, and both sets of physical screen coordinates
-are stored in `%LOCALAPPDATA%\ai-quota-deck\widget.json`. Only native drags may
-replace those coordinates; moves caused by resize, sleep, DPI, or monitor
-topology changes are ignored. After wake, the native activity watcher reasserts
+Selected view, Widget lock state, Taskbar overlay opt-in, and both sets of
+physical screen coordinates are stored in
+`%LOCALAPPDATA%\ai-quota-deck\widget.json`. The three views are Dashboard,
+Widget, and Strip, stored as the existing `visible` + `strip` pair so older
+preference files keep working. Only native drags may replace those coordinates;
+moves caused by resize, sleep, DPI, monitor topology changes, or Taskbar overlay
+alignment are ignored. After wake, the native activity watcher reasserts
 always-on-top state and retries the saved position while monitors settle. If a
 saved monitor is unavailable, the window can fall back to the primary display
 without erasing the original coordinates.
+
+While the Taskbar overlay is active, a Windows-native watcher enumerates primary
+and secondary taskbars and aligns the Strip inside the nearest one without
+writing `widget.json`. The saved long-axis coordinate is the last place the
+user dragged; after a restart the watcher snaps again from that point. It
+changes z-order only after Explorer has moved that taskbar above the Strip,
+using `HWND_TOPMOST` with `SWP_NOACTIVATE`. Ordinary and maximized apps do not
+take precedence over the taskbar Strip. A monitor-covering foreground window is
+treated as full-screen only when its native z-order is also above that
+monitor's taskbar; true full-screen apps and an auto-hidden taskbar temporarily
+hide the Strip HWND. The saved view stays Strip, so the tray checkbox still
+means "turn Strip off" rather than "restore a hidden window". Dragging remains
+available, and releasing on another monitor makes that monitor's taskbar the
+new target.
 
 Content measurement may change Widget or Strip dimensions after a quota
 snapshot, but a resize never runs monitor placement once that view has saved
@@ -146,8 +164,8 @@ Polling is provider-specific. Local and browser-backed reads use the deck's
 three-minute cycle. Claude uses a six-minute request floor and only polls while
 the workstation is in use: native `GetLastInputInfo` / `OpenInputDesktop` probes
 pause its network requests after five idle minutes or immediately on lock. A
-native background watcher notices the user's return, but the request waits one
-minute so Windows networking, Claude Desktop, and Claude Code can settle first.
+native background watcher notices the user's return, but the request waits two
+minutes so Windows networking, Claude Desktop, and Claude Code can settle first.
 The same native watcher emits an active-only refresh tick every minute. It
 recovers an overdue global cycle when the hidden WebView's timers are throttled,
 while also letting an expired Claude 429 recover independently between cycles;
@@ -156,16 +174,26 @@ and a focus/reveal event apply the same grace period. No input contents or
 activity history are read or stored.
 
 Claude 429 responses retain their cooldown even when cached rows keep the card
-in the `ok` visual state. An integer `Retry-After` is honored; otherwise repeated
-429s back off for 3, 6, 12, then 15 minutes, with 15 minutes as the ceiling. A
-quota-only `%LOCALAPPDATA%\ai-quota-deck\provider-cache\claude-rate-limit.json`
-stores only the deadline and consecutive count, so restarting the app cannot
-bypass or reset an active cooldown. A
-successful response is persisted as a quota-only snapshot; if a later live
-request fails, unexpired rows remain visible as cached for at most 24 hours.
-The cached card shows the failure reason and retry countdown. This prevents a
-temporary 429 from turning the Claude card into an empty error without hiding
-why the reading is stale or carrying a row past its reset.
+in the `ok` visual state. An integer `Retry-After` is kept in full (up to a
+24-hour corrupt-value guard) and receives a five-second boundary buffer.
+Without a usable header, repeated 429s back off for 6, 12, 24, 48, then 60
+minutes. A quota-only
+`%LOCALAPPDATA%\ai-quota-deck\provider-cache\claude-rate-limit.json` stores the
+absolute deadline, failure count, last real attempt, policy version, and
+credential-file generation. The Rust backend serializes Claude fetches and
+rechecks both the cooldown and six-minute request floor after taking the lock,
+so WebView reloads, focus events, and App restarts cannot create an early
+request. The dashboard scheduler honors `retry_after_seconds` as given and does
+not keep a second backoff table. A changed Claude Code credential generation
+clears only the old credential's gate.
+
+Builds that capped `Retry-After` at 15 minutes are migrated once: a still-future
+deadline is kept, the inflated failure count is dropped, and the new policy
+takes over. A successful response clears the breaker and is stored as a
+quota-only snapshot. If a later live request fails, unexpired rows remain
+visible as cached for at most 24 hours, with the reason and retry countdown
+still visible. If the six-minute floor is still running and no snapshot exists,
+the next live check is allowed rather than inventing an error card.
 
 **Credentials stay in memory.** No token value may reach a log line, an error
 message, or a crash report.
@@ -182,22 +210,22 @@ Authorization: Bearer <accessToken>
 Token: `~/.claude/.credentials.json` → `claudeAiOauth.accessToken`. `CLAUDE_CONFIG_DIR`
 overrides the directory, as it does for Claude Code itself.
 
-The request deliberately matches the working Claude Code-compatible monitor:
+The request identity follows the currently installed Claude Code client:
 
 ```
 Authorization: Bearer <accessToken>
 Content-Type: application/json
-User-Agent: claude-code/<installed CLI version>
+User-Agent: claude-cli/<installed CLI version> (external, cli)
+x-app: cli
+anthropic-version: 2023-06-01
 anthropic-beta: oauth-2025-04-20
 ```
 
 The CLI version is read once per process via `claude --version`, with a fixed
 fallback only when no executable can be discovered. An earlier differential
 test found that bare `Authorization` received a 200 response, but that proved
-only temporary acceptance, not equivalent rate-limit classification. A later
-same-account, same-time A/B test had the header-complete reference monitor
-succeed while the bare-header deck received 429; operationally the complete
-request identity is therefore required.
+only temporary acceptance, not equivalent rate-limit classification. The full
+client identity is therefore treated as part of the endpoint contract.
 
 ### Rejected access tokens recover through Claude Code
 
@@ -600,8 +628,10 @@ names the window, the app never guesses from its slot.**
 The full dashboard renders every reported window with reset and pace details.
 Widget and Strip reuse the same normalized data but compress it to period
 labels and percentages; Grok intentionally shows only its seven-day window.
-Compact values follow the companion extensions' thresholds: green below 70%,
-amber from 70%, and red from 90%.
+Strip further shortens provider titles to two letters — CL, CO, GE, GR — so the
+bar stays narrow; the full name remains on hover. Compact values follow the
+companion extensions' thresholds: green below 70%, amber from 70%, and red
+from 90%.
 
 ---
 

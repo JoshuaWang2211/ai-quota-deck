@@ -42,11 +42,13 @@ Dashboard 會顯示重置時間、使用速度、方案與快取狀態；Widget 
 
 - Dashboard、Widget 與 Strip 三種顯示方式
 - 可置頂、記住位置並鎖定移動的 Widget
-- 可放在螢幕任意位置的精簡橫向 Strip
+- 可放在螢幕任意位置，或釘在 Windows 工作列上方且不占用工作區的精簡橫向 Strip
 - 淺色、深色與跟隨系統主題
 - 系統匣操作與選用的開機啟動
 - 服務或瀏覽器暫時無法使用時保留快取資料
 - Windows 閒置／鎖定時暫停 Claude Code 查詢，並透過官方 CLI 恢復過期 OAuth 連線；遇到 rate limit 時自動退避
+
+在 Strip 中點擊圖釘形狀的工作列按鈕，再將 Strip 拖到工作列的空白處即可。工作列自動隱藏或其他 App 進入全螢幕時，Strip 會暫時讓位。
 
 ---
 
@@ -54,7 +56,7 @@ Dashboard 會顯示重置時間、使用速度、方案與快取狀態；Widget 
 
 **系統需求：Windows 10 或 11。**
 
-1. [點此下載最新安裝檔](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.2.2_x64-setup.exe)。
+1. [點此下載最新安裝檔](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.2.3_x64-setup.exe)。
 2. 執行安裝檔，再啟動 **AI Quota Deck**。
 3. 關閉視窗會回到系統匣；左鍵點擊系統匣圖示即可重新開啟。
 
@@ -124,9 +126,9 @@ Gemini 與 Grok 必須透過隨附的 **AI Quota Deck Browser Bridge** 從瀏覽
 
 **瀏覽器資料過期：** 打開對應分頁並等待最多約三分鐘；瀏覽器、Bridge、分頁與系統匣 App 都必須正在執行。
 
-**Claude 顯示 rate limit：** cached 卡片會顯示原因與重試倒數。期限會跨 App 重啟保留，已有的成功資料仍會顯示。
+**Claude 顯示 rate limit：** cached 卡片會顯示倒數。App 會完整遵守伺服器的冷卻時間；重開 App 不會提早重試，而 Claude Code 換新登入憑證後也不會沿用舊憑證的期限。
 
-**Claude 在閒置或鎖定時沒有更新：** 這是刻意的節流。回來操作後會先等待約一分鐘再查詢，避免與剛恢復的 Claude Desktop 或 Claude Code 搶在同一時間連線；既有的 rate-limit 冷卻仍優先。
+**Claude 在閒置或鎖定時沒有更新：** 這是刻意的節流。回來操作後會先等待約兩分鐘再查詢，避免與剛恢復的 Claude Desktop 或 Claude Code 搶在同一時間連線；既有的 rate-limit 冷卻仍優先。
 
 **Claude 顯示 token rejected：** App 會在背景請已安裝的 Claude Code CLI 更新 token，然後自動重試。若仍失敗，再手動開啟一次 Claude Code。
 

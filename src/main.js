@@ -1,6 +1,7 @@
 import {
   isUserAway,
   missedRefreshCycle,
+  providerRequestFloor,
   providerRetryDelay,
   resumeGraceDeadline,
 } from "./polling.js";
@@ -60,7 +61,7 @@ const IDLE_PAUSE_SECONDS = 5 * 60;
 
 // Let Windows networking and provider apps settle before Claude checks resume.
 // This avoids racing Claude Desktop/Code immediately after a long sleep.
-const CLAUDE_RESUME_GRACE_MS = 60_000;
+const CLAUDE_RESUME_GRACE_MS = 120_000;
 
 // "This account has no such quota" only changes if someone subscribes, so there
 // is nothing to gain from asking every three minutes.
@@ -468,7 +469,13 @@ let setupExpanded = false;
 let bridgePath = null;
 
 function slot(id) {
-  return (schedule[id] ??= { lastAttempt: 0, backoffUntil: 0, recheckAfter: 0, failures: 0 });
+  return (schedule[id] ??= {
+    lastAttempt: 0,
+    backoffUntil: 0,
+    recheckAfter: 0,
+    failures: 0,
+    retryingRateLimit: false,
+  });
 }
 
 async function fetchProvider(provider, { userAway = false } = {}) {
@@ -480,7 +487,7 @@ async function fetchProvider(provider, { userAway = false } = {}) {
   // A provider that asked us to slow down stays untouched until its backoff ends.
   if (now < state.backoffUntil) return false;
   if (now < state.recheckAfter) return false;
-  const providerFloor = Math.max(MIN_GAP_MS, provider.pollMs ?? 0);
+  const providerFloor = providerRequestFloor(provider, state.retryingRateLimit, MIN_GAP_MS);
   if (now - state.lastAttempt < providerFloor) return false;
   state.lastAttempt = now;
 
@@ -496,6 +503,9 @@ async function fetchProvider(provider, { userAway = false } = {}) {
   }
 
   const status = results[provider.id]?.status;
+  const retryAfterSeconds = results[provider.id]?.retry_after_seconds;
+  const rateLimited =
+    typeof retryAfterSeconds === "number" && Number.isFinite(retryAfterSeconds);
   state.backoffUntil = 0;
   state.recheckAfter = 0;
 
@@ -509,11 +519,13 @@ async function fetchProvider(provider, { userAway = false } = {}) {
   if (retryDelay !== null) {
     state.backoffUntil = Date.now() + retryDelay;
     state.failures += 1;
+    state.retryingRateLimit = rateLimited;
   } else {
     // An unavailable quota is a settled answer, not a failure: no escalation,
     // but no point asking again soon either.
     if (status === "unavailable") state.recheckAfter = Date.now() + UNAVAILABLE_RECHECK_MS;
     state.failures = 0;
+    state.retryingRateLimit = false;
   }
   return true;
 }

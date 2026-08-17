@@ -1,6 +1,6 @@
 [package]
 name = "ai-quota-deck"
-version = "0.2.2"
+version = "0.2.3"
 description = "Windows tray dashboard for Claude, Codex, Gemini, and Grok subscription quota."
 authors = ["Joshua Wang"]
 license = "MIT"
@@ -29,6 +29,14 @@ serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls"] }
 chrono = "0.4"
 dirs = "6"
+tokio = { version = "1", features = ["sync"] }
 
 [target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
 winreg = "0.55"

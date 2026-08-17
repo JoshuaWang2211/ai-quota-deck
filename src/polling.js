@@ -12,6 +12,17 @@ export function missedRefreshCycle(now, scheduledAt, cycleMs) {
   return Boolean(scheduledAt && now - scheduledAt >= cycleMs);
 }
 
+// A backend-provided 429 deadline replaces the healthy polling cadence for
+// that retry. Rust has already guaranteed that the deadline is no earlier than
+// Claude's healthy floor. The small global gap still protects duplicate window
+// lifecycle events firing the same command together.
+
+export function providerRequestFloor(provider, retryingRateLimit, minGapMs) {
+  return retryingRateLimit
+    ? minGapMs
+    : Math.max(minGapMs, provider.pollMs ?? 0);
+}
+
 export function providerRetryDelay(result, provider, failures, defaultBackoffMs) {
   const retryAfterSeconds = result?.retry_after_seconds;
   const rateLimited =
@@ -19,12 +30,11 @@ export function providerRetryDelay(result, provider, failures, defaultBackoffMs)
 
   if (result?.status !== "error" && !rateLimited) return null;
 
-  // The backend owns the 429 cooldown — for Claude it escalates and persists it
-  // in claude-rate-limit.json — and reports how long is left. No second table
-  // here; the provider's own poll floor just keeps the retry no more eager
-  // than a healthy poll.
+  // The backend owns the 429 cooldown and reports how long is left. Do not
+  // lengthen it with the healthy cadence; fetchProvider uses the duplicate-event
+  // floor, rather than pollMs, when this retry becomes due.
   if (rateLimited) {
-    return Math.max(Math.max(retryAfterSeconds, 0) * 1000, provider.pollMs ?? 0);
+    return Math.max(retryAfterSeconds, 0) * 1000;
   }
   return Math.max(
     defaultBackoffMs[Math.min(failures, defaultBackoffMs.length - 1)],

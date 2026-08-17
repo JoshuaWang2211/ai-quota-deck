@@ -1,9 +1,13 @@
 export const WIDGET_PROVIDERS = [
-  { id: "claude", name: "Claude" },
-  { id: "codex", name: "Codex" },
-  { id: "gemini", name: "Gemini" },
-  { id: "grok", name: "Grok" },
+  { id: "claude", name: "Claude", stripName: "CL" },
+  { id: "codex", name: "Codex", stripName: "CO" },
+  { id: "gemini", name: "Gemini", stripName: "GE" },
+  { id: "grok", name: "Grok", stripName: "GR" },
 ];
+
+export function compactProviderName(provider, strip) {
+  return strip ? provider.stripName : provider.name;
+}
 
 export function isSevenDayWindow(window_) {
   return window_.window_seconds === 7 * 24 * 60 * 60 || /^weekly\b/i.test(window_.label);

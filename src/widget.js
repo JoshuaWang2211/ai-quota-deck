@@ -1,4 +1,5 @@
 import {
+  compactProviderName,
   compactWindowLabel,
   quotaTone,
   WIDGET_PROVIDERS,
@@ -13,11 +14,12 @@ const statusEl = document.getElementById("widget-status");
 const dragHandleEl = document.getElementById("widget-drag-handle");
 const widgetEl = document.querySelector(".widget");
 const openDashboardEl = document.getElementById("open-dashboard");
+const taskbarOverlayEl = document.getElementById("taskbar-overlay");
 const lockWidgetEl = document.getElementById("lock-widget");
 const hideWidgetEl = document.getElementById("hide-widget");
 
 let snapshot = { results: {}, backoffUntil: {}, updatedAt: null };
-let preferences = { visible: false, locked: false, strip: false };
+let preferences = { visible: false, locked: false, strip: false, taskbar_overlay: false };
 let resizeFrame = null;
 
 const nowSec = () => Math.floor(Date.now() / 1000);
@@ -76,8 +78,8 @@ function renderMetric(window_) {
 function renderProvider(provider, quota) {
   const row = el("section", `widget-provider${quota?.stale ? " cached" : ""}`);
   const identity = el("div", "provider-identity");
-  const name = el("span", "provider-name", provider.name);
-  if (quota?.plan) name.title = quota.plan;
+  const name = el("span", "provider-name", compactProviderName(provider, preferences.strip));
+  name.title = quota?.plan ? `${provider.name} · ${quota.plan}` : provider.name;
   identity.append(name);
 
   const stale = staleDetails(provider.id, quota);
@@ -225,6 +227,7 @@ function applyPreferences(next) {
   preferences = { ...preferences, ...next };
   document.documentElement.dataset.locked = preferences.locked.toString();
   document.documentElement.dataset.mode = preferences.strip ? "strip" : "widget";
+  document.documentElement.dataset.taskbarOverlay = preferences.taskbar_overlay.toString();
   widgetEl.setAttribute(
     "aria-label",
     preferences.strip ? "AI quota strip" : "AI quota widget",
@@ -234,9 +237,14 @@ function applyPreferences(next) {
     "aria-label",
     preferences.locked ? "Unlock widget position" : "Lock widget position",
   );
+  taskbarOverlayEl.title = preferences.taskbar_overlay
+    ? "Stop keeping the strip above the taskbar"
+    : "Keep strip above the taskbar";
+  taskbarOverlayEl.setAttribute("aria-label", taskbarOverlayEl.title);
+  taskbarOverlayEl.setAttribute("aria-pressed", preferences.taskbar_overlay.toString());
   hideWidgetEl.title = preferences.strip ? "Hide strip" : "Hide widget";
   hideWidgetEl.setAttribute("aria-label", hideWidgetEl.title);
-  scheduleResize();
+  render();
 }
 
 widgetEl.addEventListener("pointerdown", (event) => {
@@ -264,6 +272,14 @@ openDashboardEl.addEventListener("click", () => void invoke("open_dashboard"));
 hideWidgetEl.addEventListener("click", () => void invoke("hide_companion"));
 lockWidgetEl.addEventListener("click", () => {
   void invoke("set_widget_locked", { locked: !preferences.locked });
+});
+
+taskbarOverlayEl.addEventListener("click", () => {
+  void invoke("set_taskbar_overlay", { enabled: !preferences.taskbar_overlay })
+    .then(applyPreferences)
+    .catch((error) => {
+      taskbarOverlayEl.title = `Could not change taskbar overlay: ${error}`;
+    });
 });
 
 await listen("quota-snapshot", ({ payload }) => {

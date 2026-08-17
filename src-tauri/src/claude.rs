@@ -1,7 +1,7 @@
 //! Claude quota, read from the OAuth token Claude Code leaves on disk.
 //! See ARCHITECTURE.md §3.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -11,6 +11,10 @@ use std::os::windows::process::CommandExt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::claude_rate_limit::{
+    self, clear_rate_limit, mark_attempt, rate_limit_remaining, record_rate_limit,
+    request_floor_remaining,
+};
 use crate::quota::{http_failure, now, rfc3339_to_unix, ProviderQuota, QuotaWindow, Stale};
 
 const PROVIDER: &str = "claude";
@@ -19,6 +23,8 @@ const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 /// here instead.
 const PROFILE_URL: &str = "https://api.anthropic.com/api/oauth/profile";
 const ANTHROPIC_BETA: &str = "oauth-2025-04-20";
+const ANTHROPIC_VERSION: &str = "2023-06-01";
+const ANTHROPIC_APP: &str = "cli";
 const FALLBACK_CLAUDE_VERSION: &str = "2.1.204";
 const REQUEST_TIMEOUT_SECONDS: u64 = 10;
 const TOKEN_REFRESH_TIMEOUT_SECONDS: u64 = 60;
@@ -36,10 +42,6 @@ const PLAN_RETRY_SECONDS: i64 = 30 * 60;
 /// bounded: an old weekly figure is better than a blank card during a brief
 /// outage, but not after a full day of missed observations.
 const SNAPSHOT_MAX_AGE_SECONDS: i64 = 24 * 60 * 60;
-/// A 429 without Retry-After still needs to be distinguishable from a cached
-/// success so the frontend does not accidentally clear its backoff state.
-const RATE_LIMIT_MIN_RETRY_SECONDS: u64 = 3 * 60;
-const RATE_LIMIT_MAX_RETRY_SECONDS: u64 = 15 * 60;
 /// `claude update` checks for, downloads and replaces the whole CLI install —
 /// it must not run again every poll while the refresh token is truly dead. A
 /// fresh sign-in rotates the credential file directly, which the next poll
@@ -49,6 +51,7 @@ const TOKEN_REFRESH_RETRY_SECONDS: i64 = 60 * 60;
 static PLAN_CACHE: Mutex<Option<CachedPlan>> = Mutex::new(None);
 static CLAUDE_USER_AGENT: OnceLock<String> = OnceLock::new();
 static LAST_FAILED_TOKEN_REFRESH: Mutex<Option<i64>> = Mutex::new(None);
+static FETCH_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 /// An updater that outlived its timeout is parked here instead of killed, so a
 /// later attempt can reap it — and refuses to start a second one against the
 /// same install while it is still running.
@@ -63,6 +66,7 @@ struct FetchError {
     message: String,
     retry_after_seconds: Option<u64>,
     rate_limited: bool,
+    credential_generation: i64,
 }
 
 impl FetchError {
@@ -71,14 +75,20 @@ impl FetchError {
             message: message.into(),
             retry_after_seconds: None,
             rate_limited: false,
+            credential_generation: 0,
         }
     }
 
-    fn rate_limited(message: String, retry_after_seconds: Option<u64>) -> Self {
+    fn rate_limited(
+        message: String,
+        retry_after_seconds: Option<u64>,
+        credential_generation: i64,
+    ) -> Self {
         Self {
             message,
             retry_after_seconds,
             rate_limited: true,
+            credential_generation,
         }
     }
 
@@ -87,14 +97,9 @@ impl FetchError {
             message: "Claude Code could not refresh the rejected token automatically — open Claude Code once and try again".to_string(),
             retry_after_seconds: None,
             rate_limited: false,
+            credential_generation: 0,
         }
     }
-}
-
-#[derive(Default, Deserialize, Serialize)]
-struct RateLimitState {
-    until: i64,
-    failures: u32,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -315,10 +320,8 @@ fn record_refresh_failure() {
     }
 }
 
-fn read_credentials() -> Result<Credentials, FetchError> {
-    let path = credentials_path()
-        .ok_or_else(|| FetchError::plain("could not locate the home directory"))?;
-    let raw = std::fs::read_to_string(&path).map_err(|error| {
+fn read_credentials_from_path(path: &Path) -> Result<Credentials, FetchError> {
+    let raw = std::fs::read_to_string(path).map_err(|error| {
         FetchError::plain(format!(
             "cannot read {} — is Claude Code installed and signed in? ({error})",
             path.display()
@@ -331,6 +334,33 @@ fn read_credentials() -> Result<Credentials, FetchError> {
     })
 }
 
+fn read_credentials() -> Result<Credentials, FetchError> {
+    let path = credentials_path()
+        .ok_or_else(|| FetchError::plain("could not locate the home directory"))?;
+    read_credentials_from_path(&path)
+}
+
+fn read_credentials_snapshot() -> Result<(Credentials, i64), FetchError> {
+    let path = credentials_path()
+        .ok_or_else(|| FetchError::plain("could not locate the home directory"))?;
+
+    // Claude Code replaces this file during login. Pair the parsed token with a
+    // stable before/after generation so a response cannot be assigned to a
+    // different credential that appeared while the request was in flight.
+    for _ in 0..3 {
+        let before = claude_rate_limit::credential_generation(&path);
+        let credentials = read_credentials_from_path(&path)?;
+        let after = claude_rate_limit::credential_generation(&path);
+        if before == after {
+            return Ok((credentials, after));
+        }
+    }
+
+    Err(FetchError::plain(
+        "Claude Code credentials changed while being read — retrying on the next check",
+    ))
+}
+
 fn claude_user_agent() -> &'static str {
     CLAUDE_USER_AGENT
         .get_or_init(|| {
@@ -339,7 +369,7 @@ fn claude_user_agent() -> &'static str {
                 .filter(|path| path.is_file())
                 .find_map(|path| cli_version(&path))
                 .unwrap_or_else(|| FALLBACK_CLAUDE_VERSION.to_string());
-            format!("claude-code/{version}")
+            format!("claude-cli/{version} (external, cli)")
         })
         .as_str()
 }
@@ -361,6 +391,8 @@ fn api_request(
         .bearer_auth(token)
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .header(reqwest::header::USER_AGENT, user_agent)
+        .header("x-app", ANTHROPIC_APP)
+        .header("anthropic-version", ANTHROPIC_VERSION)
         .header("anthropic-beta", ANTHROPIC_BETA)
 }
 
@@ -372,70 +404,9 @@ fn usage_cache_path() -> Option<PathBuf> {
     provider_cache_dir().map(|dir| dir.join("claude.json"))
 }
 
-fn rate_limit_cache_path() -> Option<PathBuf> {
-    provider_cache_dir().map(|dir| dir.join("claude-rate-limit.json"))
-}
-
-fn read_rate_limit_state() -> RateLimitState {
-    rate_limit_cache_path()
-        .and_then(|path| std::fs::read_to_string(path).ok())
-        .and_then(|raw| serde_json::from_str(&raw).ok())
-        .unwrap_or_default()
-}
-
-fn write_rate_limit_state(state: &RateLimitState) -> Result<(), String> {
-    let path =
-        rate_limit_cache_path().ok_or("could not locate the local application data directory")?;
-    let parent = path
-        .parent()
-        .ok_or("Claude rate-limit cache path has no parent directory")?;
-    std::fs::create_dir_all(parent)
-        .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
-    let bytes = serde_json::to_vec(state)
-        .map_err(|error| format!("cannot serialize Claude rate-limit state: {error}"))?;
-    std::fs::write(&path, bytes)
-        .map_err(|error| format!("cannot write {}: {error}", path.display()))
-}
-
-fn rate_limit_remaining(state: &RateLimitState, current_time: i64) -> Option<u64> {
-    let remaining = state.until.checked_sub(current_time)?;
-    (remaining > 0).then_some(remaining as u64)
-}
-
-fn next_rate_limit_state(
-    previous: &RateLimitState,
-    current_time: i64,
-    retry_after_seconds: Option<u64>,
-) -> (RateLimitState, u64) {
-    let failures = previous.failures.saturating_add(1);
-    let exponent = failures.saturating_sub(1).min(3);
-    let exponential = RATE_LIMIT_MIN_RETRY_SECONDS
-        .saturating_mul(1_u64 << exponent)
-        .min(RATE_LIMIT_MAX_RETRY_SECONDS);
-    let delay = retry_after_seconds
-        .map(|seconds| seconds.clamp(RATE_LIMIT_MIN_RETRY_SECONDS, RATE_LIMIT_MAX_RETRY_SECONDS))
-        .unwrap_or(exponential);
-    (
-        RateLimitState {
-            until: current_time.saturating_add(delay as i64),
-            failures,
-        },
-        delay,
-    )
-}
-
-fn record_rate_limit(retry_after_seconds: Option<u64>) -> u64 {
-    let current_time = now();
-    let (state, delay) =
-        next_rate_limit_state(&read_rate_limit_state(), current_time, retry_after_seconds);
-    let _ = write_rate_limit_state(&state);
-    delay
-}
-
-fn clear_rate_limit() {
-    let state = read_rate_limit_state();
-    if state.until != 0 || state.failures != 0 {
-        let _ = write_rate_limit_state(&RateLimitState::default());
+fn clear_plan_cache() {
+    if let Ok(mut guard) = PLAN_CACHE.lock() {
+        *guard = None;
     }
 }
 
@@ -615,8 +586,19 @@ pub async fn fetch() -> ProviderQuota {
         );
     }
 
-    let rate_limit_state = read_rate_limit_state();
-    if let Some(remaining) = rate_limit_remaining(&rate_limit_state, now()) {
+    // Keep the authoritative gate in Rust. A WebView reload, a second caller,
+    // or several wake/focus events can ask for a check, but only one request
+    // reaches Anthropic and the persisted floor is rechecked after locking.
+    let _fetch_guard = FETCH_LOCK.lock().await;
+    let current_time = now();
+    let generation = claude_rate_limit::credential_generation(&path);
+    let (mut rate_limit_state, credentials_changed) =
+        claude_rate_limit::read_rate_limit_state(current_time, generation);
+    if credentials_changed {
+        clear_plan_cache();
+    }
+
+    if let Some(remaining) = rate_limit_remaining(&rate_limit_state, current_time) {
         let message = http_failure(
             reqwest::StatusCode::TOO_MANY_REQUESTS,
             "the Claude usage endpoint",
@@ -626,15 +608,32 @@ pub async fn fetch() -> ProviderQuota {
             .with_retry_after(Some(remaining));
     }
 
+    if request_floor_remaining(&rate_limit_state, current_time).is_some() {
+        if let Some(quota) = cached_quota("waiting for the next scheduled Claude check") {
+            return quota;
+        }
+    }
+
+    mark_attempt(&mut rate_limit_state, current_time, generation);
+
     match try_fetch().await {
-        Ok(quota) => {
-            clear_rate_limit();
+        Ok((quota, request_generation)) => {
+            clear_rate_limit(&mut rate_limit_state, request_generation);
             quota
         }
         Err(failure) => {
-            let retry_after_seconds = failure
-                .rate_limited
-                .then(|| record_rate_limit(failure.retry_after_seconds));
+            let retry_after_seconds = if failure.rate_limited {
+                if failure.credential_generation > 0 {
+                    rate_limit_state.credential_generation = failure.credential_generation;
+                }
+                Some(record_rate_limit(
+                    &mut rate_limit_state,
+                    now(),
+                    failure.retry_after_seconds,
+                ))
+            } else {
+                None
+            };
             let quota = cached_quota(&failure.message)
                 .unwrap_or_else(|| ProviderQuota::error(PROVIDER, failure.message));
             quota.with_retry_after(retry_after_seconds)
@@ -642,8 +641,8 @@ pub async fn fetch() -> ProviderQuota {
     }
 }
 
-async fn try_fetch() -> Result<ProviderQuota, FetchError> {
-    let mut creds = read_credentials()?;
+async fn try_fetch() -> Result<(ProviderQuota, i64), FetchError> {
+    let (mut creds, mut request_generation) = read_credentials_snapshot()?;
     let client = claude_client()
         .map_err(|error| FetchError::plain(format!("could not build HTTP client: {error}")))?;
     // First use scans the CLI on disk for its version — child processes and
@@ -674,7 +673,15 @@ async fn try_fetch() -> Result<ProviderQuota, FetchError> {
                 record_refresh_failure();
                 return Err(FetchError::auth_rejected());
             }
-            creds = read_credentials()?;
+            let (refreshed_credentials, refreshed_generation) = read_credentials_snapshot()?;
+            if request_generation > 0
+                && refreshed_generation > 0
+                && request_generation != refreshed_generation
+            {
+                clear_plan_cache();
+            }
+            creds = refreshed_credentials;
+            request_generation = refreshed_generation;
             continue;
         }
         if !response.status().is_success() {
@@ -686,7 +693,7 @@ async fn try_fetch() -> Result<ProviderQuota, FetchError> {
                 .and_then(|value| value.parse::<u64>().ok());
             let message = http_failure(status, "the Claude usage endpoint");
             return Err(if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                FetchError::rate_limited(message, retry_after_seconds)
+                FetchError::rate_limited(message, retry_after_seconds, request_generation)
             } else {
                 FetchError::plain(message)
             });
@@ -699,9 +706,12 @@ async fn try_fetch() -> Result<ProviderQuota, FetchError> {
 
     if body.limits.is_empty() {
         // The call worked; there is simply nothing metered on this plan.
-        return Ok(ProviderQuota::unavailable(
-            PROVIDER,
-            "Signed in, but this plan reports no usage limits.",
+        return Ok((
+            ProviderQuota::unavailable(
+                PROVIDER,
+                "Signed in, but this plan reports no usage limits.",
+            ),
+            request_generation,
         ));
     }
 
@@ -725,7 +735,10 @@ async fn try_fetch() -> Result<ProviderQuota, FetchError> {
     // reading, and no credential or raw provider response reaches this file.
     let _ = write_cached_usage(&plan, &windows);
 
-    Ok(ProviderQuota::ok(PROVIDER, plan, windows))
+    Ok((
+        ProviderQuota::ok(PROVIDER, plan, windows),
+        request_generation,
+    ))
 }
 
 #[cfg(test)]
@@ -839,11 +852,16 @@ mod tests {
     }
 
     #[test]
-    fn claude_requests_match_the_working_monitors_headers() {
+    fn claude_requests_match_current_claude_code_headers() {
         let client = claude_client().unwrap();
-        let request = api_request(&client, USAGE_URL, "fake-test-token", "claude-code/9.8.7")
-            .build()
-            .unwrap();
+        let request = api_request(
+            &client,
+            USAGE_URL,
+            "fake-test-token",
+            "claude-cli/9.8.7 (external, cli)",
+        )
+        .build()
+        .unwrap();
         assert_eq!(
             request.headers()[reqwest::header::AUTHORIZATION],
             "Bearer fake-test-token"
@@ -854,8 +872,10 @@ mod tests {
         );
         assert_eq!(
             request.headers()[reqwest::header::USER_AGENT],
-            "claude-code/9.8.7"
+            "claude-cli/9.8.7 (external, cli)"
         );
+        assert_eq!(request.headers()["x-app"], ANTHROPIC_APP);
+        assert_eq!(request.headers()["anthropic-version"], ANTHROPIC_VERSION);
         assert_eq!(request.headers()["anthropic-beta"], ANTHROPIC_BETA);
     }
 
@@ -867,22 +887,5 @@ mod tests {
         );
         assert_eq!(parse_cli_version("Claude 2.1.225"), None);
         assert_eq!(parse_cli_version("2.1"), None);
-    }
-
-    #[test]
-    fn rate_limit_state_survives_restart_and_escalates() {
-        let (first, first_delay) = next_rate_limit_state(&RateLimitState::default(), 1_000, None);
-        assert_eq!(first_delay, 180);
-        assert_eq!(rate_limit_remaining(&first, 1_100), Some(80));
-        assert_eq!(rate_limit_remaining(&first, 1_180), None);
-
-        let (second, second_delay) = next_rate_limit_state(&first, 1_180, None);
-        assert_eq!(second.failures, 2);
-        assert_eq!(second_delay, 360);
-
-        let (_, short_header) = next_rate_limit_state(&second, 1_540, Some(30));
-        assert_eq!(short_header, 180);
-        let (_, long_header) = next_rate_limit_state(&second, 1_540, Some(3_600));
-        assert_eq!(long_header, 900);
     }
 }

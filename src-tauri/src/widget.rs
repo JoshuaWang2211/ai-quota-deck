@@ -28,6 +28,25 @@ const USER_DRAG_WINDOW: Duration = Duration::from_secs(30);
 const PROGRAMMATIC_MOVE_WINDOW: Duration = Duration::from_secs(5);
 const PREFERENCES_EVENT: &str = "widget-preferences-changed";
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DisplayMode {
+    #[default]
+    Dashboard,
+    Widget,
+    Strip,
+}
+
+impl DisplayMode {
+    pub fn parse(mode: &str) -> Result<Self, String> {
+        match mode {
+            "dashboard" => Ok(Self::Dashboard),
+            "widget" => Ok(Self::Widget),
+            "strip" => Ok(Self::Strip),
+            _ => Err(format!("unknown display mode: {mode}")),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 #[serde(default)]
 pub struct WidgetPreferences {
@@ -38,6 +57,34 @@ pub struct WidgetPreferences {
     pub y: Option<i32>,
     pub strip_x: Option<i32>,
     pub strip_y: Option<i32>,
+    pub taskbar_overlay: bool,
+}
+
+impl WidgetPreferences {
+    pub fn mode(&self) -> DisplayMode {
+        match (self.visible, self.strip) {
+            (true, true) => DisplayMode::Strip,
+            (true, false) => DisplayMode::Widget,
+            (false, _) => DisplayMode::Dashboard,
+        }
+    }
+
+    fn apply_mode(&mut self, mode: DisplayMode) {
+        match mode {
+            DisplayMode::Dashboard => {
+                self.visible = false;
+                self.strip = false;
+            }
+            DisplayMode::Widget => {
+                self.visible = true;
+                self.strip = false;
+            }
+            DisplayMode::Strip => {
+                self.visible = true;
+                self.strip = true;
+            }
+        }
+    }
 }
 
 pub struct WidgetState {
@@ -279,15 +326,19 @@ fn emit_preferences(app: &AppHandle, preferences: &WidgetPreferences) {
 }
 
 fn prepare_document(window: &WebviewWindow, preferences: &WidgetPreferences) {
-    let mode = if preferences.strip { "strip" } else { "widget" };
+    let mode = match preferences.mode() {
+        DisplayMode::Strip => "strip",
+        _ => "widget",
+    };
     let _ = window.eval(format!(
-        "document.documentElement.dataset.mode='{mode}';document.documentElement.dataset.locked='{}';",
-        preferences.locked
+        "document.documentElement.dataset.mode='{mode}';document.documentElement.dataset.locked='{}';document.documentElement.dataset.taskbarOverlay='{}';",
+        preferences.locked,
+        preferences.taskbar_overlay
     ));
 }
 
 fn initial_size(preferences: &WidgetPreferences) -> LogicalSize<f64> {
-    if preferences.strip {
+    if preferences.mode() == DisplayMode::Strip {
         LogicalSize::new(DEFAULT_STRIP_WIDTH, STRIP_HEIGHT)
     } else {
         LogicalSize::new(DEFAULT_WIDGET_WIDTH, DEFAULT_WIDGET_HEIGHT)
@@ -348,21 +399,7 @@ fn preferences_for_mode(
     mut preferences: WidgetPreferences,
     mode: &str,
 ) -> Result<WidgetPreferences, String> {
-    match mode {
-        "dashboard" => {
-            preferences.visible = false;
-            preferences.strip = false;
-        }
-        "widget" => {
-            preferences.visible = true;
-            preferences.strip = false;
-        }
-        "strip" => {
-            preferences.visible = true;
-            preferences.strip = true;
-        }
-        _ => return Err(format!("unknown display mode: {mode}")),
-    }
+    preferences.apply_mode(DisplayMode::parse(mode)?);
     Ok(preferences)
 }
 
@@ -374,6 +411,35 @@ pub fn set_locked(
     let mut preferences = state.snapshot()?;
     preferences.locked = locked;
     let preferences = state.replace(preferences)?;
+    emit_preferences(app, &preferences);
+    Ok(preferences)
+}
+
+#[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
+pub fn set_taskbar_overlay(
+    app: &AppHandle,
+    state: &WidgetState,
+    enabled: bool,
+) -> Result<WidgetPreferences, String> {
+    let previous = state.snapshot()?;
+    if previous.taskbar_overlay == enabled {
+        return Ok(previous);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    if enabled {
+        return Err("taskbar overlay is available only on Windows".to_string());
+    }
+
+    let mut next = previous.clone();
+    next.taskbar_overlay = enabled;
+
+    #[cfg(target_os = "windows")]
+    if enabled && next.mode() == DisplayMode::Strip {
+        crate::taskbar_overlay::snap_with_preferences(app, state, &next)?;
+    }
+
+    let preferences = state.replace(next)?;
     emit_preferences(app, &preferences);
     Ok(preferences)
 }
@@ -448,6 +514,26 @@ pub fn resize(
     result
 }
 
+pub(crate) fn move_strip_for_taskbar(
+    window: &WebviewWindow,
+    state: &WidgetState,
+    position: PhysicalPosition<i32>,
+) -> Result<(), String> {
+    if window.label() != WINDOW_LABEL {
+        return Err("only the companion window can use taskbar placement".to_string());
+    }
+
+    // Overlay alignment is not a user drag. Move the window and do not persist
+    // — strip_x/strip_y stay the last place the user put it. After restart the
+    // watcher snaps again from that saved long-axis coordinate.
+    state.expect_programmatic_position(position);
+    state.suspend_position_updates(true);
+    let result = window
+        .set_position(position)
+        .map_err(|error| error.to_string());
+    state.suspend_position_updates(false);
+    result
+}
 /// Reassert a companion window after Windows wakes and restores its monitor
 /// topology. Windows can temporarily relocate always-on-top windows while an
 /// external display is still waking; that system move must not replace the
@@ -596,6 +682,7 @@ mod tests {
             y: Some(80),
             strip_x: Some(500),
             strip_y: Some(300),
+            taskbar_overlay: true,
         };
         let dashboard = preferences_for_mode(original.clone(), "dashboard").unwrap();
         assert!(!dashboard.visible);
@@ -603,6 +690,7 @@ mod tests {
         assert!(dashboard.locked);
         assert_eq!(dashboard.x, Some(120));
         assert_eq!(dashboard.strip_x, Some(500));
+        assert!(dashboard.taskbar_overlay);
 
         let widget = preferences_for_mode(original.clone(), "widget").unwrap();
         assert!(widget.visible);
@@ -612,5 +700,31 @@ mod tests {
         assert!(strip.visible);
         assert!(strip.strip);
         assert!(preferences_for_mode(strip, "unknown").is_err());
+    }
+
+    #[test]
+    fn display_mode_is_the_visible_strip_pair() {
+        let mut preferences = WidgetPreferences::default();
+        assert_eq!(preferences.mode(), DisplayMode::Dashboard);
+        preferences.apply_mode(DisplayMode::Widget);
+        assert_eq!(preferences.mode(), DisplayMode::Widget);
+        assert!(preferences.visible);
+        assert!(!preferences.strip);
+        preferences.apply_mode(DisplayMode::Strip);
+        assert_eq!(preferences.mode(), DisplayMode::Strip);
+        preferences.apply_mode(DisplayMode::Dashboard);
+        assert_eq!(preferences.mode(), DisplayMode::Dashboard);
+        assert!(!preferences.visible);
+        assert!(!preferences.strip);
+    }
+
+    #[test]
+    fn older_preferences_default_taskbar_overlay_to_off() {
+        let preferences: WidgetPreferences =
+            serde_json::from_str(r#"{"visible":true,"strip":true,"strip_x":8,"strip_y":1040}"#)
+                .unwrap();
+        assert!(preferences.visible);
+        assert!(preferences.strip);
+        assert!(!preferences.taskbar_overlay);
     }
 }

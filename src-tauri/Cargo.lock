@@ -19,7 +19,7 @@ dependencies = [
 
 [[package]]
 name = "ai-quota-deck"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "chrono",
  "dirs",
@@ -30,6 +30,8 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
+ "tokio",
+ "windows-sys 0.61.2",
  "winreg",
 ]
 

@@ -4,12 +4,15 @@ import test from "node:test";
 import {
   isUserAway,
   missedRefreshCycle,
+  providerRequestFloor,
   providerRetryDelay,
   resumeGraceDeadline,
 } from "../src/polling.js";
 import {
+  compactProviderName,
   compactWindowLabel,
   quotaTone,
+  WIDGET_PROVIDERS,
   widgetWindows,
 } from "../src/widget-model.js";
 
@@ -24,8 +27,8 @@ test("Claude pauses at five idle minutes and immediately on lock", () => {
 });
 
 test("Claude waits after resume without shortening an existing provider delay", () => {
-  assert.equal(resumeGraceDeadline(1_000, 0, 60_000), 61_000);
-  assert.equal(resumeGraceDeadline(1_000, 90_000, 60_000), 90_000);
+  assert.equal(resumeGraceDeadline(1_000, 0, 120_000), 121_000);
+  assert.equal(resumeGraceDeadline(1_000, 150_000, 120_000), 150_000);
 });
 
 test("a timer delayed by sleep is treated as a resume instead of an immediate Claude poll", () => {
@@ -35,27 +38,30 @@ test("a timer delayed by sleep is treated as a resume instead of an immediate Cl
 });
 
 test("cached Claude rows follow the cooldown the backend reports", () => {
-  // The Rust side escalates 3/6/12/15 minutes across repeated 429s and reports
-  // what is left; the frontend adds no schedule of its own on top. The poll
-  // floor only keeps a short remainder from re-polling faster than a healthy
-  // cycle would.
-  const cooldownStart = { status: "ok", retry_after_seconds: 180 };
-  assert.equal(providerRetryDelay(cooldownStart, claude, 0, defaults), 360_000);
-  assert.equal(providerRetryDelay(cooldownStart, claude, 3, defaults), 360_000);
+  // Rust owns the 6/12/24/48/60-minute fallback and five-second edge buffer;
+  // the frontend preserves the exact remaining cooldown it receives.
+  const cooldownStart = { status: "ok", retry_after_seconds: 365 };
+  assert.equal(providerRetryDelay(cooldownStart, claude, 0, defaults), 365_000);
+  assert.equal(providerRetryDelay(cooldownStart, claude, 3, defaults), 365_000);
   assert.equal(
-    providerRetryDelay({ status: "ok", retry_after_seconds: 720 }, claude, 0, defaults),
-    720_000,
+    providerRetryDelay({ status: "ok", retry_after_seconds: 1078 }, claude, 0, defaults),
+    1_078_000,
   );
 });
 
-test("Retry-After is honored as given, above the poll floor", () => {
+test("a due 429 retry bypasses only the healthy provider cadence", () => {
+  assert.equal(providerRequestFloor(claude, false, 20_000), 360_000);
+  assert.equal(providerRequestFloor(claude, true, 20_000), 20_000);
+});
+
+test("backend Retry-After deadlines pass through without a frontend cap", () => {
   assert.equal(
-    providerRetryDelay({ status: "ok", retry_after_seconds: 420 }, claude, 0, defaults),
-    420_000,
+    providerRetryDelay({ status: "ok", retry_after_seconds: 1078 }, claude, 0, defaults),
+    1_078_000,
   );
   assert.equal(
-    providerRetryDelay({ status: "error", retry_after_seconds: 3600 }, claude, 0, defaults),
-    3_600_000,
+    providerRetryDelay({ status: "error", retry_after_seconds: 3605 }, claude, 0, defaults),
+    3_605_000,
   );
 });
 
@@ -82,6 +88,14 @@ test("widget shows only Grok's seven-day pool", () => {
   ];
   assert.deepEqual(widgetWindows("grok", windows), [windows[1]]);
   assert.deepEqual(widgetWindows("gemini", windows), windows);
+});
+
+test("strip shortens provider titles and widget keeps the full name", () => {
+  assert.deepEqual(
+    WIDGET_PROVIDERS.map((provider) => compactProviderName(provider, true)),
+    ["CL", "CO", "GE", "GR"],
+  );
+  assert.equal(compactProviderName(WIDGET_PROVIDERS[0], false), "Claude");
 });
 
 test("widget colors match the extension thresholds", () => {

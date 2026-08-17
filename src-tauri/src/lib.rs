@@ -1,12 +1,15 @@
 mod activity;
 mod bridge;
 mod claude;
+mod claude_rate_limit;
 mod codex;
 mod gemini;
 mod grok;
 mod native_host;
 mod quota;
 mod startup;
+#[cfg(target_os = "windows")]
+mod taskbar_overlay;
 mod widget;
 
 use quota::ProviderQuota;
@@ -88,10 +91,10 @@ fn sync_widget_menu(app: &AppHandle, preferences: &widget::WidgetPreferences) {
     if let Some(menu) = app.try_state::<WidgetMenuState>() {
         let _ = menu
             .widget
-            .set_checked(preferences.visible && !preferences.strip);
+            .set_checked(preferences.mode() == widget::DisplayMode::Widget);
         let _ = menu
             .strip
-            .set_checked(preferences.visible && preferences.strip);
+            .set_checked(preferences.mode() == widget::DisplayMode::Strip);
         let _ = menu.locked.set_checked(preferences.locked);
     }
 }
@@ -160,6 +163,15 @@ fn set_widget_locked(
 }
 
 #[tauri::command]
+fn set_taskbar_overlay(
+    app: AppHandle,
+    state: State<'_, widget::WidgetState>,
+    enabled: bool,
+) -> Result<widget::WidgetPreferences, String> {
+    widget::set_taskbar_overlay(&app, &state, enabled)
+}
+
+#[tauri::command]
 fn start_widget_drag(
     window: WebviewWindow,
     state: State<'_, widget::WidgetState>,
@@ -215,8 +227,8 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .state::<widget::WidgetState>()
         .snapshot()
         .unwrap_or_default();
-    let widget_visible = widget_preferences.visible && !widget_preferences.strip;
-    let strip_visible = widget_preferences.visible && widget_preferences.strip;
+    let widget_visible = widget_preferences.mode() == widget::DisplayMode::Widget;
+    let strip_visible = widget_preferences.mode() == widget::DisplayMode::Strip;
     let show_widget = CheckMenuItem::with_id(
         app,
         "show-widget",
@@ -282,8 +294,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             "show-widget" => {
                 let state = app.state::<widget::WidgetState>();
                 if let Ok(preferences) = state.snapshot() {
-                    let active = preferences.visible && !preferences.strip;
-                    let result = if active {
+                    let result = if preferences.mode() == widget::DisplayMode::Widget {
                         update_display_mode(app, &state, "dashboard")
                     } else {
                         switch_display_mode(app, &state, "widget")
@@ -296,8 +307,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             "show-strip" => {
                 let state = app.state::<widget::WidgetState>();
                 if let Ok(preferences) = state.snapshot() {
-                    let active = preferences.visible && preferences.strip;
-                    let result = if active {
+                    let result = if preferences.mode() == widget::DisplayMode::Strip {
                         update_display_mode(app, &state, "dashboard")
                     } else {
                         switch_display_mode(app, &state, "strip")
@@ -380,6 +390,8 @@ pub fn run() {
                 }
                 activity::watch(app.handle().clone());
 
+                #[cfg(target_os = "windows")]
+                taskbar_overlay::watch(app.handle().clone());
                 // Installer finish-page launches and shortcut launches are
                 // explicit user actions, so show the dashboard. Only the Run
                 // key passes --hidden and starts quietly in the tray.
@@ -437,6 +449,7 @@ pub fn run() {
             set_widget_locked,
             start_widget_drag,
             resize_widget,
+            set_taskbar_overlay,
             open_dashboard
         ])
         .run(tauri::generate_context!())

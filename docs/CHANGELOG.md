@@ -4,6 +4,20 @@ All notable changes to AI Quota Deck are documented here.
 
 ---
 
+## v0.2.3 - 2026-08-16
+
+- Fixed a persistent Claude 429 loop: the deck was cutting Anthropic's observed `Retry-After` from 1,073 seconds to its 15-minute fallback ceiling, then retrying early. Server deadlines are now preserved with a five-second edge buffer; no-header failures back off for 6, 12, 24, 48, then 60 minutes.
+- Migrated old 15-minute-capped cooldown files once by keeping a still-future deadline and dropping the inflated failure count. The request gate now lives in its own module and no longer reconstructs a quiet window from fields those builds never wrote.
+- Moved Claude single-flight and the six-minute request floor into the Rust backend, persisted the last real attempt, and invalidated an old token's gate when Claude Code rotates its credentials. The dashboard uses `retry_after_seconds` as given.
+- Updated the request identity to the current Claude Code CLI headers and User-Agent.
+- Increased the post-wake Claude grace period from one to two minutes so Windows networking and Claude clients can settle before the first request.
+- Synchronized every visible and package version, including the dashboard footer and Browser Bridge, at v0.2.3.
+- Added an optional Taskbar overlay for Strip: it follows the nearest Windows taskbar, stays above ordinary and maximized apps without taking focus, supports secondary taskbars, and yields to auto-hide and true full-screen apps without reserving desktop work area. Overlay alignment does not overwrite the user's saved coordinates; the tray still toggles the saved view rather than HWND visibility.
+- Shortened Strip provider titles to CL, CO, GE, and GR so the bar uses less width. Widget and dashboard still use the full names.
+
+---
+
+
 ## v0.2.2 - 2026-08-14
 
 - Added a 10-second timeout to the Codex and Grok network requests. A single stalled provider request could previously freeze the whole refresh cycle indefinitely.
