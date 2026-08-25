@@ -154,7 +154,9 @@ body {
 
 .widget-provider {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
+  /* Measured: ANTIGRAVITY beside its cached badge needs 101px. Strip overrides
+     this with max-content columns, so only the Widget pays for it. */
+  grid-template-columns: 104px minmax(0, 1fr);
   align-items: center;
   column-gap: 12px;
   min-height: 30px;
@@ -210,7 +212,7 @@ body {
 }
 
 .metric-period {
-  max-width: 45px;
+  max-width: 56px;
   overflow: hidden;
   color: var(--label);
   font-size: 8.5px;

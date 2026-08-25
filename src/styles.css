@@ -401,6 +401,17 @@ body {
   font-weight: 600;
 }
 
+.setup-name input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+/* Native controls follow the user agent's scheme rather than the app's, so a
+   dark panel would otherwise carry a light checkbox. */
+:root[data-theme="dark"] .setup-name input {
+  color-scheme: dark;
+}
+
 .setup-optional {
   padding: 1px 5px;
   border-radius: 7px;

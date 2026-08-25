@@ -1,4 +1,5 @@
 mod activity;
+mod antigravity;
 mod bridge;
 mod claude;
 mod claude_rate_limit;
@@ -60,6 +61,11 @@ async fn grok_quota() -> ProviderQuota {
 #[tauri::command]
 async fn gemini_quota() -> ProviderQuota {
     gemini::fetch().await
+}
+
+#[tauri::command]
+async fn antigravity_quota() -> ProviderQuota {
+    antigravity::fetch().await
 }
 
 #[tauri::command]
@@ -169,6 +175,16 @@ fn set_taskbar_overlay(
     enabled: bool,
 ) -> Result<widget::WidgetPreferences, String> {
     widget::set_taskbar_overlay(&app, &state, enabled)
+}
+
+#[tauri::command]
+fn set_provider_hidden(
+    app: AppHandle,
+    state: State<'_, widget::WidgetState>,
+    id: String,
+    hidden: bool,
+) -> Result<widget::WidgetPreferences, String> {
+    widget::set_provider_hidden(&app, &state, &id, hidden)
 }
 
 #[tauri::command]
@@ -407,7 +423,7 @@ pub fn run() {
 
             // The dashboard fetches for itself on load and on every reveal, so
             // there is no startup fetch here — one would just double the
-            // requests made against four undocumented endpoints.
+            // requests made against five undocumented endpoints.
 
             Ok(())
         })
@@ -440,6 +456,7 @@ pub fn run() {
             codex_quota,
             gemini_quota,
             grok_quota,
+            antigravity_quota,
             system_activity,
             bridge_dir,
             reveal_bridge_dir,
@@ -450,6 +467,7 @@ pub fn run() {
             start_widget_drag,
             resize_widget,
             set_taskbar_overlay,
+            set_provider_hidden,
             open_dashboard
         ])
         .run(tauri::generate_context!())

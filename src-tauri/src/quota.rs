@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// inferred from position. Providers hand back *slots*, and what lands in a slot
 /// depends on the plan: on a free ChatGPT account the first Codex slot is a
 /// 30-day window, so labelling it "5-hour" because it came first would be wrong
-/// and would look entirely plausible. See ARCHITECTURE.md §7.
+/// and would look entirely plausible. See ARCHITECTURE.md §8.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct QuotaWindow {
     pub label: String,
@@ -83,7 +83,7 @@ pub enum ProviderQuota {
     },
     /// No local sign-in, session record, or browser snapshot has ever been
     /// detected. The dashboard hides these providers from the main deck and
-    /// offers them through onboarding instead of presenting four error cards
+    /// offers them through onboarding instead of presenting five error cards
     /// to someone who only uses one service.
     #[serde(rename = "not_configured")]
     NotConfigured {

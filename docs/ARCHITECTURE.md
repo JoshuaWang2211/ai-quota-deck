@@ -24,11 +24,13 @@ This is the single fact that determines the app's shape.
 | Codex | `~/.codex/auth.json` (plaintext JSON) | **Yes** |
 | Grok | Browser session (primary); `~/.grok/auth.json` (fallback) | **Both** |
 | Gemini | `gemini.google.com` cookie **+ a token that only exists in a rendered page** | No |
+| Antigravity | `--csrf_token` on the IDE's language-server command line (process-local) | **Yes**, while the IDE runs |
 
 The pattern is that a vendor's **CLI or desktop client** leaves an OAuth token in
 the user's home directory, and that token is enough to read the account's quota.
-Three of four do this. Gemini has no such client, so it is the hard exception
-(§6). Grok deliberately uses both routes: browser data avoids the CLI's
+Three of five do this. Gemini has no such client, so it is the hard exception
+(§6), and Antigravity keeps its credential inside a running process instead of
+on disk (§7). Grok deliberately uses both routes: browser data avoids the CLI's
 six-hour token expiry, while the disk token still works when no browser tab is
 open (§5).
 
@@ -41,7 +43,7 @@ Chrome                                  Desktop
        ▼                               │   Claude poller ──→ HTTPS    │
 ┌────────────────────────┐   cache     │   Codex  poller ──→ HTTPS    │
 │ ai-quota-deck.exe      │───────────→ │   Grok browser → CLI fallback│
-│ (native-host mode)     │             │                              │
+│ (native-host mode)     │             │   Antigravity → local IDE    │
 └────────────────────────┘             └──────────────────────────────┘
 ```
 
@@ -49,12 +51,13 @@ Chrome                                  Desktop
 Browser-only → push it. That single question decides the whole integration, and
 it is worth re-asking per provider rather than assuming: Grok was initially
 classified as browser-bound because its usage was known only through a browser
-extension, and that was wrong (§8).
+extension, and that was wrong (§9).
 
 ### What this costs the user
 
 Each direct provider requires a local sign-in: Claude Code for Claude, Codex
-Desktop for Codex, and optionally Grok Build as Grok's fallback. Browser-backed
+Desktop for Codex, a running Antigravity IDE for Antigravity, and optionally
+Grok Build as Grok's fallback. Browser-backed
 Gemini and Grok instead require the bundled Browser Bridge and a signed-in tab.
 A subscription alone is not enough because the deck never asks users to paste a
 credential.
@@ -63,12 +66,23 @@ Provider discovery is deliberately local and additive. A missing credential or
 browser cache returns `not_configured` before any vendor request is attempted,
 and the dashboard hides that provider. Existing integrations that are expired,
 stale, rate-limited, or otherwise broken remain visible with an actionable
-state. If no provider is found, the dashboard shows onboarding instead of four
+state. If no provider is found, the dashboard shows onboarding instead of five
 error cards. The setup panel points Claude users to Claude Code, Codex users to
-Codex Desktop, and browser users to the advanced Browser Bridge setup (Grok can
-still use its CLI fallback). The production bridge installation is guided
-unpacked loading (§8). Local discovery repeats on the normal poll so a new
+Codex Desktop, Antigravity users to the IDE, and browser users to the advanced
+Browser Bridge setup (Grok can still use its CLI fallback). The production bridge installation is guided
+unpacked loading (§9). Local discovery repeats on the normal poll so a new
 sign-in appears without restarting the app.
+
+The same panel lists every provider with a checkbox. An unticked provider is
+not polled at all — polling is a question of politeness and rate limiting (§2),
+and a card nobody is looking at should not spend Claude's 429 budget. Its last
+results, its retry schedule, and Claude's persisted cooldown are left untouched,
+so re-ticking it shows the previous rows immediately and the next request still
+passes every existing gate. The hide-list is stored as `hidden_providers` in
+`widget.json` beside the view preferences, which is the one store the
+dashboard, the companion window, and the tray already share; an absent field
+means everything is visible, so older preference files and newly added
+providers need no migration.
 
 ### Why Widget and Strip share a second window, but not a second poller
 
@@ -84,7 +98,8 @@ The companion window never calls a provider command. The hidden main dashboard
 remains the sole scheduler and sends quota-only snapshots through targeted Tauri
 events. A native active-only tick prevents a due three-minute cycle from being
 stranded by a throttled hidden WebView; request floors and backoff remain in
-control. Neither companion view adds Claude, Codex, Gemini, or Grok requests.
+control. Neither companion view adds Claude, Codex, Antigravity, Gemini, or Grok
+requests.
 
 Selected view, Widget lock state, Taskbar overlay opt-in, and both sets of
 physical screen coordinates are stored in
@@ -152,7 +167,7 @@ just this dashboard. The one automated recovery path still respects this rule:
 after a Claude `401`, the deck runs the official `claude update` command and
 accepts only a changed access token written by Claude Code itself.
 
-**Never hardcode a window period.** See §7. This is the most likely source of a
+**Never hardcode a window period.** See §8. This is the most likely source of a
 wrong-but-plausible number.
 
 **Reading a quota does not consume it.** Measured: three consecutive calls to the
@@ -493,7 +508,7 @@ On the development account the two read 44 % and 13.7 % at the same moment.
 
 `currentPeriod.type` names the window (`USAGE_PERIOD_TYPE_WEEKLY` observed) —
 another provider declaring its own period rather than leaving it to be inferred
-(§7).
+(§8).
 
 `productUsage` is a per-product split of one subscription — chat, voice, coding,
 and image generation drawing on the same pool. Both the CLI and browser sources
@@ -568,7 +583,7 @@ breakdown without changing either sibling extension repository.
 
 The two existing Chrome Web Store extensions remain independent products and are
 not transports for the Deck. The dedicated Browser Bridge is bundled with the
-app and installed through the guided unpacked flow in §8.
+app and installed through the guided unpacked flow in §9.
 
 ### Payload shape
 
@@ -600,7 +615,157 @@ account wins.
 
 ---
 
-## 7. Window periods are slots, not fixed durations
+## 7. Antigravity
+
+Antigravity is a third answer to the §1 question. The credential is neither on
+disk nor in a browser: it is a per-process CSRF token that exists only on the
+command line of the language server the IDE starts, and it changes on every
+launch. A desktop process owned by the same user can read it, so Antigravity is
+polled — but only while the IDE is running.
+
+```
+POST https://127.0.0.1:<port>/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary
+Content-Type: application/json
+Connect-Protocol-Version: 1
+X-Codeium-Csrf-Token: <csrf_token>
+
+{}
+```
+
+**Verified on 2026-08-21** against Antigravity IDE `1.107.0` (`ideVersion 2.5.5`)
+on a Google AI Pro account.
+
+### Finding the server
+
+The IDE spawns `language_server_windows_x64.exe` (`language_server_windows_arm.exe`
+on ARM) with, among others, `--csrf_token <uuid>` and `--app_data_dir antigravity-ide`.
+Two traps:
+
+- `--extension_server_port` is **not** the API port. It belongs to the IDE side.
+  The API port is not on the command line at all; the deck enumerates the
+  process's listening TCP ports and tries them in ascending order.
+- The line also carries `--extension_server_csrf_token`. Only the literal
+  `--csrf_token` flag (space or `=` form) is the right token.
+
+One IDE runs more than one language server: a global one owned by the main IDE
+process, and one per workspace window carrying `--enable_lsp`, `--workspace_id`
+and `--parent_pipe_path`. Both answer the same quota for the same account, so
+the deck prefers the process without `--enable_lsp` and falls back to the rest.
+Each process listens on two loopback ports: the lower one speaks TLS with a
+certificate bundled in the binary (`CN=localhost`, SAN `127.0.0.1`, self-signed),
+the next one is a cleartext twin of the same API. The LSP-enabled process adds
+a third socket that is not the Connect API. The deck speaks HTTPS only, through
+a client built inside `antigravity.rs` that accepts the self-signed certificate
+and can only ever be pointed at `127.0.0.1`.
+
+Discovery uses Win32 directly — a Toolhelp32 snapshot, the process's PEB for
+its command line, and `GetExtendedTcpTable` for its listeners — and repeats on
+every poll, so a restarted IDE (new token, new ports) is picked up on the next
+cycle without any stored state. Measured cost with 408 processes on the
+development machine: about 10 ms and no child process. Every third-party tool
+surveyed shells out to PowerShell or `wmic` instead; their Windows bug reports
+(quoting, antivirus prompts, warm-up delays, `wmic` missing on Windows 11 24H2)
+all come from that choice. `RetrieveUserQuota` answers 404 and
+`GetCommandModelConfigs` 501 on this build; `GetUnleashData` answers 200 and is
+what the community extensions use as a port probe. The deck probes with the
+summary call itself.
+
+### Response
+
+```json
+{ "response": { "groups": [
+    { "displayName": "Gemini Models",
+      "description": "Models within this group: Gemini Flash, Gemini Pro",
+      "buckets": [
+        { "bucketId": "gemini-weekly", "displayName": "Weekly Limit Remaining",
+          "window": "weekly", "remainingFraction": 0.99684095,
+          "resetTime": "2026-08-24T02:50:47Z" },
+        { "bucketId": "gemini-5h", "displayName": "Five Hour Limit Remaining",
+          "window": "5h", "remainingFraction": 1,
+          "resetTime": "2026-08-21T18:06:34Z" } ] },
+    { "displayName": "Claude and GPT models",
+      "description": "Models within this group: Claude Opus, Claude Sonnet, GPT-OSS",
+      "buckets": [
+        { "bucketId": "3p-weekly", "window": "weekly", "remainingFraction": 1,
+          "resetTime": "2026-08-28T13:06:34Z" },
+        { "bucketId": "3p-5h", "window": "5h", "remainingFraction": 1,
+          "resetTime": "2026-08-21T18:06:34Z" } ] } ],
+  "description": "Within each group, models share a weekly limit and a 5-hour limit. ..." } }
+```
+
+Two independent pools, each with a weekly and a five-hour bucket. The payload
+names its own window (`window`), so the label comes from there — `"5h"` is
+*Session (5h)*, `"weekly"` is *Weekly*, anything else keeps its own word and
+gets no pace marker (§8). The group name becomes the scope: *Weekly · Gemini*,
+*Session (5h) · Claude+GPT*. Three traps:
+
+- **`remainingFraction` is the fraction *left*, 0–1.** Used percent is
+  `(1 − remainingFraction) × 100`.
+- **An untouched bucket carries a sliding `resetTime`.** While
+  `remainingFraction` is exactly `1`, `resetTime` is simply the server's last
+  refresh instant plus the window length, and it moves every few minutes. It is
+  not a deadline. The deck drops `resets_at` for a full bucket and trusts the
+  value only once something has been consumed — the partially used weekly
+  bucket above kept a fixed `resetTime` that matched its own description
+  ("fully refresh in 2 days, 13 hours").
+- **The response contains no account identity**, which is why it is the only
+  Antigravity payload the deck stores. `GetUserStatus` does carry `name` and
+  `email`; the deck reads it through a typed struct that declares only
+  `userTier.name` (the Google plan, *Google AI Pro*) and, as a fallback,
+  `planStatus.planInfo.planName`, caches that label in memory for six hours,
+  and never writes the payload anywhere. Its `planStatus.availablePromptCredits`
+  / `monthlyPromptCredits` pair (500 of 50 000 on an idle account) is a legacy
+  field from the server's Codeium lineage and would render as 99 % used; it is
+  not an Antigravity quota and is never shown.
+
+`GetUserStatus` also lists every model with a `quotaInfo` of its own, but all
+fourteen entries repeat the same pool value, the array order changes between
+calls, and no window is named. The community extensions built on that shape
+before the summary call existed; the deck does not use it.
+
+### States
+
+The CSRF token is the credential, and it does not exist while the IDE is
+closed. The deck's own quota-only snapshot,
+`%LOCALAPPDATA%\ai-quota-deck\provider-cache\antigravity.json`, decides what a
+missing process means, exactly as the browser cache does for Gemini (§6):
+
+| Situation | Card |
+|-----------|------|
+| No process, and the deck has never read Antigravity | `not_configured`; appears only in the setup panel |
+| No process, snapshot under 24 hours with unexpired rows | `ok` shown as cached, reason "Antigravity IDE is not running" |
+| No process, snapshot present but expired or unreadable | `action_required`: open the IDE once; no backoff, rechecked every cycle at ~10 ms |
+| Process present but every port fails (401, timeout, TLS, bad JSON) | cached if a snapshot exists, otherwise `error` with the normal backoff |
+| Process present but its command line cannot be read — an elevated IDE under a deck that is not | cached if a snapshot exists, otherwise `error` naming that cause |
+| Summary answers 404 or 501 | `action_required`: this deck version needs a newer IDE |
+| 200 with no usable bucket | `unavailable` |
+
+Reading consumes nothing: repeated calls seconds apart returned byte-identical
+numbers, and the server itself only refreshes from Google every few minutes, so
+the deck's ordinary three-minute cycle is enough. There is no idle gating and no
+request floor — nothing here reaches Google. A free plan is documented as
+weekly-only, so fewer rows is normal, not `unavailable`.
+
+Widget and Strip show the two weekly buckets only, for the same reason Grok
+shows only its seven-day window: that is the one that locks an account out for
+days, and four metrics per row would not fit. The Strip abbreviation is `AG`.
+
+### Why not read the quota with the IDE closed
+
+Every tool that does so spends a Google refresh token — lifted from the IDE's
+`state.vscdb`, from the `agy` CLI's credential-store entry, or from a login flow
+of its own — to call `cloudcode-pa.googleapis.com` while impersonating the
+Antigravity client. That breaks the rule in §2, and it is also the exact surface
+on which Google has been disabling accounts for Terms-of-Service violations
+since February 2026. The only refresh-free variant, reusing the `agy` CLI's
+stored access token as-is, goes stale about an hour after the CLI last ran and
+still speaks to Google under a borrowed identity. Keeping the IDE open is the
+same kind of requirement Gemini already imposes with its browser tab, and it
+costs the user nothing they are not already doing when they use Antigravity.
+
+---
+
+## 8. Window periods are slots, not fixed durations
 
 The most dangerous assumption in this codebase.
 
@@ -628,14 +793,14 @@ names the window, the app never guesses from its slot.**
 The full dashboard renders every reported window with reset and pace details.
 Widget and Strip reuse the same normalized data but compress it to period
 labels and percentages; Grok intentionally shows only its seven-day window.
-Strip further shortens provider titles to two letters — CL, CO, GE, GR — so the
+Strip further shortens provider titles to two letters — CL, CO, AG, GE, GR — so the
 bar stays narrow; the full name remains on hover. Compact values follow the
 companion extensions' thresholds: green below 70%, amber from 70%, and red
 from 90%.
 
 ---
 
-## 8. Considered and rejected
+## 9. Considered and rejected
 
 ### Reading Chrome's cookie database directly
 
@@ -778,7 +943,7 @@ reachable companion app.
 
 ---
 
-## 9. Known unknowns
+## 10. Known unknowns
 
 ### Which plans have actually been seen
 
@@ -794,6 +959,8 @@ gaps are not oversights — they are tiers nobody has run this against yet.
 | Codex | Pro | Unseen |
 | Grok | SuperGrok | **Measured.** Weekly window plus a per-product split |
 | Grok | Free | **Measured through the extension.** Per-model query counts; no subscription window |
+| Antigravity | Google AI Pro | **Measured.** Two pools (Gemini; Claude + GPT), each with a weekly and a five-hour bucket |
+| Antigravity | Free, Ultra | Unseen. Free is documented as weekly-only; fewer buckets is expected, not an error |
 
 A plan with nothing to report is **not an error**. All providers route
 "the call worked and there is no such quota" to an `Unavailable` card: stated
@@ -822,9 +989,9 @@ If your plan renders wrongly, the useful bug report is the raw response with
 
 ---
 
-## 10. Stability outlook
+## 11. Stability outlook
 
-All four interfaces are undocumented and unversioned.
+All five interfaces are undocumented and unversioned.
 
 | Signal | Reading |
 |--------|---------|
@@ -832,6 +999,7 @@ All four interfaces are undocumented and unversioned.
 | Codex answers on both `/wham/` and `/codex/` | Same — an alias kept for compatibility |
 | Codex omits `rate_limits` from older session logs | The local format changed recently too |
 | Gemini's RPC id is Closure-generated | Changes whenever the quota service is refactored |
+| Antigravity's IDE server answers the summary call today while older builds only served per-model `GetUserStatus` | The local API surface moves with IDE releases; flags and process names can too |
 
 Expect breakage on the order of "a few times a year, per provider". The design
 consequence: **each provider must fail independently.** One dead endpoint shows
@@ -839,7 +1007,7 @@ one dead card, never an empty dashboard.
 
 ---
 
-## 11. When something breaks
+## 12. When something breaks
 
 1. **Claude shows an auth error** → automatic `claude update` already failed;
    open Claude Code once and complete sign-in. **Codex shows one** → open Codex
@@ -848,7 +1016,7 @@ one dead card, never an empty dashboard.
 2. **Codex card is stale but Claude is fine** → the usage endpoint changed.
    Re-check the three path variants in §4 before assuming anything deeper.
 3. **A window is labelled with the wrong period** → something hardcoded a slot
-   instead of reading the duration (§7). Check the label derivation first; the
+   instead of reading the duration (§8). Check the label derivation first; the
    data is probably correct.
 4. **Codex shows an "offline" badge that never clears** → `auth.json` is missing
    or unreadable and the app fell back to session JSONL. Confirm the file exists
@@ -866,3 +1034,10 @@ one dead card, never an empty dashboard.
    (§6). After waking or unlocking, allow one three-minute cycle. If the age still
    does not advance, confirm the tab is signed in and reload the companion and
    Gemini page. The card should show its age rather than claim the snapshot is live.
+8. **Antigravity asks you to open the IDE** → expected when no
+   `language_server_windows_*.exe` is running and the last snapshot is older than
+   24 hours (§7). Start Antigravity IDE; the card recovers on the next cycle. If
+   the IDE is running and the card shows an error instead, either the IDE was
+   started elevated while the deck was not, or an IDE update changed the server's
+   command line — check that the language server process still carries
+   `--csrf_token` and an `--app_data_dir` beginning with `antigravity`.

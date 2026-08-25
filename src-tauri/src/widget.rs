@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
         Mutex, MutexGuard,
@@ -58,6 +58,7 @@ pub struct WidgetPreferences {
     pub strip_x: Option<i32>,
     pub strip_y: Option<i32>,
     pub taskbar_overlay: bool,
+    pub hidden_providers: Vec<String>,
 }
 
 impl WidgetPreferences {
@@ -222,6 +223,10 @@ fn preferences_path() -> Option<PathBuf> {
 fn persist(preferences: &WidgetPreferences) -> Result<(), String> {
     let path = preferences_path()
         .ok_or_else(|| "could not locate the local application data directory".to_string())?;
+    persist_to(&path, preferences)
+}
+
+fn persist_to(path: &Path, preferences: &WidgetPreferences) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| "widget preferences path has no parent directory".to_string())?;
@@ -229,7 +234,16 @@ fn persist(preferences: &WidgetPreferences) -> Result<(), String> {
         .map_err(|error| format!("cannot create widget preferences directory: {error}"))?;
     let json = serde_json::to_string_pretty(preferences)
         .map_err(|error| format!("cannot serialize widget preferences: {error}"))?;
-    fs::write(path, json).map_err(|error| format!("cannot save widget preferences: {error}"))
+    // A torn write makes load() fall back to defaults and lose the saved view,
+    // positions, and hidden providers together. Write aside and rename so the
+    // file always holds either the old preferences or the new ones.
+    let staging = path.with_extension(format!("tmp-{}", std::process::id()));
+    fs::write(&staging, json)
+        .map_err(|error| format!("cannot save widget preferences: {error}"))?;
+    fs::rename(&staging, path).map_err(|error| {
+        let _ = fs::remove_file(&staging);
+        format!("cannot replace widget preferences: {error}")
+    })
 }
 
 fn screens(window: &WebviewWindow) -> Result<(Vec<ScreenRect>, Option<ScreenRect>), String> {
@@ -275,6 +289,24 @@ fn store_position(preferences: &mut WidgetPreferences, position: PhysicalPositio
         preferences.y = Some(position.y);
     }
     true
+}
+
+/// Hide or show one provider in the persisted hide-list. Unknown ids are kept
+/// as written (a future provider may claim them); only a blank id is refused.
+/// Returns whether the list changed.
+fn toggle_hidden(preferences: &mut WidgetPreferences, id: &str, hidden: bool) -> bool {
+    let id = id.trim();
+    if id.is_empty() {
+        return false;
+    }
+    let previous = preferences.hidden_providers.clone();
+    preferences.hidden_providers.retain(|entry| entry != id);
+    if hidden {
+        preferences.hidden_providers.push(id.to_string());
+    }
+    preferences.hidden_providers.sort();
+    preferences.hidden_providers.dedup();
+    preferences.hidden_providers != previous
 }
 
 fn clamped_position(
@@ -411,6 +443,25 @@ pub fn set_locked(
     let mut preferences = state.snapshot()?;
     preferences.locked = locked;
     let preferences = state.replace(preferences)?;
+    emit_preferences(app, &preferences);
+    Ok(preferences)
+}
+
+pub fn set_provider_hidden(
+    app: &AppHandle,
+    state: &WidgetState,
+    id: &str,
+    hidden: bool,
+) -> Result<WidgetPreferences, String> {
+    if id.trim().is_empty() {
+        return Err("provider id is required".to_string());
+    }
+    let previous = state.snapshot()?;
+    let mut next = previous.clone();
+    if !toggle_hidden(&mut next, id, hidden) {
+        return Ok(previous);
+    }
+    let preferences = state.replace(next)?;
     emit_preferences(app, &preferences);
     Ok(preferences)
 }
@@ -683,6 +734,7 @@ mod tests {
             strip_x: Some(500),
             strip_y: Some(300),
             taskbar_overlay: true,
+            hidden_providers: Vec::new(),
         };
         let dashboard = preferences_for_mode(original.clone(), "dashboard").unwrap();
         assert!(!dashboard.visible);
@@ -726,5 +778,69 @@ mod tests {
         assert!(preferences.visible);
         assert!(preferences.strip);
         assert!(!preferences.taskbar_overlay);
+    }
+
+    #[test]
+    fn older_preferences_default_hidden_providers_to_empty() {
+        let preferences: WidgetPreferences =
+            serde_json::from_str(r#"{"visible":true,"strip":true,"strip_x":8,"strip_y":1040}"#)
+                .unwrap();
+        assert!(preferences.hidden_providers.is_empty());
+    }
+
+    #[test]
+    fn hidden_providers_round_trip() {
+        let original = WidgetPreferences {
+            hidden_providers: vec!["grok".to_string()],
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let restored: WidgetPreferences = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored, original);
+    }
+
+    #[test]
+    fn toggle_hidden_is_idempotent_and_sorted() {
+        let mut preferences = WidgetPreferences::default();
+        assert!(toggle_hidden(&mut preferences, "grok", true));
+        assert!(!toggle_hidden(&mut preferences, "grok", true));
+        assert_eq!(preferences.hidden_providers, vec!["grok"]);
+
+        assert!(toggle_hidden(&mut preferences, "claude", true));
+        assert_eq!(preferences.hidden_providers, vec!["claude", "grok"]);
+
+        assert!(toggle_hidden(&mut preferences, "grok", false));
+        assert_eq!(preferences.hidden_providers, vec!["claude"]);
+
+        assert!(!toggle_hidden(&mut preferences, "codex", false));
+        assert!(!toggle_hidden(&mut preferences, "  ", true));
+        assert_eq!(preferences.hidden_providers, vec!["claude"]);
+    }
+
+    #[test]
+    fn persist_replaces_the_file_atomically_and_round_trips() {
+        let dir = std::env::temp_dir().join("ai-quota-deck-test-widget-preferences");
+        let _ = fs::remove_dir_all(&dir);
+        let path = dir.join("widget.json");
+
+        let mut preferences = WidgetPreferences {
+            hidden_providers: vec!["grok".to_string()],
+            ..Default::default()
+        };
+        persist_to(&path, &preferences).unwrap();
+        // The second write replaces an existing file through the rename.
+        preferences.locked = true;
+        persist_to(&path, &preferences).unwrap();
+
+        let restored: WidgetPreferences =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(restored, preferences);
+
+        let entries: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(entries, vec![std::ffi::OsString::from("widget.json")]);
+        let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -1,4 +1,5 @@
 import {
+  enabledProviders,
   isUserAway,
   missedRefreshCycle,
   providerRequestFloor,
@@ -27,6 +28,12 @@ const PROVIDERS = [
     setup: "Open the Codex app and sign in once.",
   },
   {
+    id: "antigravity",
+    name: "Antigravity",
+    command: "antigravity_quota",
+    setup: "Install Google Antigravity IDE, sign in, and keep the IDE open while the deck reads its quota.",
+  },
+  {
     id: "gemini",
     name: "Gemini",
     command: "gemini_quota",
@@ -43,7 +50,7 @@ const PROVIDERS = [
 ];
 
 // Three minutes, matching the sibling Claude tray tool's default. Reading a
-// quota costs no quota, so the only cost is request volume against four
+// quota costs no quota, so the only cost is request volume against five
 // undocumented endpoints — and one of them answers 429 if pushed.
 const POLL_MS = 180_000;
 
@@ -81,7 +88,7 @@ const widgetModeEl = document.getElementById("widget-mode");
 const stripModeEl = document.getElementById("strip-mode");
 const themeEl = document.getElementById("theme");
 
-let widgetPreferences = { visible: false, locked: false, strip: false };
+let widgetPreferences = { visible: false, locked: false, strip: false, hidden_providers: [] };
 
 const nowSec = () => Math.floor(Date.now() / 1000);
 
@@ -318,29 +325,37 @@ function renderProvider(provider, quota) {
   return section;
 }
 
-function renderEmptyState(checked) {
+function renderEmptyState(checked, allHidden) {
   const section = el("section", "provider-empty");
+  if (allHidden) {
+    section.append(el("h2", null, "All providers hidden"));
+    section.append(el("p", null, "Tick a provider under Providers to show it again."));
+    return section;
+  }
   section.append(el("h2", null, checked ? "No providers detected" : "Checking for providers…"));
   section.append(
     el(
       "p",
       null,
       checked
-        ? "Run Claude Code or Codex once, or set up the optional Browser Bridge for Gemini and Grok."
-        : "Looking for existing Claude Code, Codex, Gemini, and Grok sign-ins.",
+        ? "Run Claude Code, Codex, or Antigravity IDE once, or set up the optional Browser Bridge for Gemini and Grok."
+        : "Looking for existing Claude Code, Codex, Antigravity, Gemini, and Grok sign-ins.",
     ),
   );
   return section;
 }
 
-function renderProviderControls(missingProviders, checked) {
+function renderProviderControls(missingProviders) {
   providerControlsEl.replaceChildren();
-  if (!checked || missingProviders.length === 0) return;
 
+  // Lead with setup only while every enabled provider is still waiting for a
+  // sign-in; otherwise the panel is simply where providers are ticked on and off.
   const button = el(
     "button",
     "manage-providers",
-    configuredProviders().length === 0 ? "Set up providers" : "+ Add providers",
+    missingProviders.length > 0 && configuredProviders().length === 0
+      ? "Set up providers"
+      : "Providers",
   );
   button.type = "button";
   button.setAttribute("aria-expanded", setupExpanded.toString());
@@ -357,16 +372,26 @@ function renderProviderControls(missingProviders, checked) {
     el(
       "p",
       "setup-intro",
-      "Claude and Codex use existing desktop sign-ins. Gemini and Grok use the optional Browser Bridge.",
+      "Claude, Codex, and Antigravity use existing desktop sign-ins. Gemini and Grok use the optional Browser Bridge.",
     ),
   );
 
   const list = el("ul", "setup-list");
-  for (const provider of missingProviders) {
+  for (const provider of PROVIDERS) {
     const item = el("li", "setup-item");
-    const head = el("div", "setup-name", provider.name);
+    const head = el("label", "setup-name");
+    const checkbox = el("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = !widgetPreferences.hidden_providers.includes(provider.id);
+    checkbox.addEventListener("change", () => {
+      void setProviderHidden(provider, !checkbox.checked, checkbox);
+    });
+    head.append(checkbox, document.createTextNode(provider.name));
     if (provider.optional) head.append(el("span", "setup-optional", "Optional"));
-    item.append(head, el("p", null, provider.setup));
+    item.append(head);
+    if (results[provider.id]?.status === "not_configured") {
+      item.append(el("p", null, provider.setup));
+    }
     list.append(item);
   }
   panel.append(list);
@@ -374,6 +399,28 @@ function renderProviderControls(missingProviders, checked) {
     panel.append(renderBridgeHelp());
   }
   providerControlsEl.append(panel);
+}
+
+async function setProviderHidden(provider, hidden, checkbox) {
+  try {
+    applyWidgetPreferences(await invoke("set_provider_hidden", { id: provider.id, hidden }));
+  } catch (error) {
+    checkbox.checked = !hidden;
+    checkbox.title = `Could not change provider visibility: ${error}`;
+    return;
+  }
+  render();
+  if (hidden) return;
+
+  // Go through fetchProvider directly rather than refresh([provider]): the
+  // cycle-level inFlight guard would silently drop a re-tick made while a
+  // cycle is running. The provider's own floor and backoff gates still decide
+  // whether a request is actually sent.
+  const attempted = await fetchProvider(provider);
+  if (attempted && results[provider.id]?.status !== "not_configured") {
+    lastUpdatedAt = new Date();
+  }
+  render();
 }
 
 // The one thing the setup steps cannot be written down without: where the app
@@ -421,27 +468,36 @@ function renderBridgeHelp() {
   return block;
 }
 
+// The providers the user has left ticked. Only these are scheduled or drawn;
+// a hidden provider keeps its results and schedule slot untouched.
+function activeProviders() {
+  return enabledProviders(PROVIDERS, widgetPreferences.hidden_providers);
+}
+
 function allProvidersChecked() {
-  return PROVIDERS.every(({ id }) => results[id]);
+  return activeProviders().every(({ id }) => results[id]);
 }
 
 function configuredProviders() {
-  return PROVIDERS.filter(({ id }) => results[id] && results[id].status !== "not_configured");
+  return activeProviders().filter(
+    ({ id }) => results[id] && results[id].status !== "not_configured",
+  );
 }
 
 function render() {
+  const active = activeProviders();
   const checked = allProvidersChecked();
   const configured = configuredProviders();
   const missing = checked
-    ? PROVIDERS.filter(({ id }) => results[id].status === "not_configured")
+    ? active.filter(({ id }) => results[id].status === "not_configured")
     : [];
 
   providersEl.replaceChildren(
     ...(configured.length
       ? configured.map((provider) => renderProvider(provider, results[provider.id]))
-      : [renderEmptyState(checked)]),
+      : [renderEmptyState(checked, active.length === 0)]),
   );
-  renderProviderControls(missing, checked);
+  renderProviderControls(missing);
   publishWidgetSnapshot();
 }
 
@@ -531,6 +587,12 @@ async function fetchProvider(provider, { userAway = false } = {}) {
 }
 
 function updateRefreshStatus() {
+  if (activeProviders().length === 0) {
+    updatedEl.textContent = "All providers hidden";
+    countdownEl.textContent = "";
+    return;
+  }
+
   const checked = allProvidersChecked();
   const hasConfiguredProvider = configuredProviders().length > 0;
 
@@ -565,7 +627,7 @@ function updateRefreshStatus() {
   countdownEl.textContent = `Refresh in ${duration(seconds)}`;
 }
 
-async function refresh(providers = PROVIDERS, { markUpdated = true } = {}) {
+async function refresh(providers = activeProviders(), { markUpdated = true } = {}) {
   if (inFlight) return;
   inFlight = true;
   updateRefreshStatus();
@@ -599,7 +661,10 @@ function scheduleNextRefresh() {
 }
 
 await listen("widget-ready", publishWidgetSnapshot);
-await listen("widget-preferences-changed", ({ payload }) => applyWidgetPreferences(payload));
+await listen("widget-preferences-changed", ({ payload }) => {
+  applyWidgetPreferences(payload);
+  render();
+});
 applyWidgetPreferences(await invoke("widget_preferences").catch(() => widgetPreferences));
 
 render();
@@ -619,7 +684,7 @@ function refreshFromNativeTick() {
     })();
     return;
   }
-  const claude = PROVIDERS.find(({ id }) => id === "claude");
+  const claude = activeProviders().find(({ id }) => id === "claude");
   if (claude) void refresh([claude], { markUpdated: false });
 }
 
@@ -642,20 +707,26 @@ setInterval(updateRefreshStatus, 1000);
 // Countdowns and backoff timers are relative, so they go stale between polls
 // even when the data does not.
 setInterval(() => {
+  // A render rebuilds the providers panel, so it would take focus off a
+  // checkbox someone is on. Relative times can wait for the next tick.
+  if (providerControlsEl.contains(document.activeElement)) return;
   if (Object.keys(results).length) render();
 }, 30_000);
 
 // Chromium may throttle this WebView while the tray window is hidden. On
-// reveal, refresh browser-backed caches and let Claude catch up after an idle or
-// locked stretch. Provider floors and backoff still suppress duplicate calls.
-const RESUME_PROVIDERS = PROVIDERS.filter(
-  ({ id }) => id === "claude" || id === "gemini" || id === "grok",
-);
+// reveal, refresh browser-backed caches, notice an Antigravity IDE that has
+// started since, and let Claude catch up after an idle or locked stretch.
+// Provider floors and backoff still suppress duplicate calls.
+function resumeProviders() {
+  return activeProviders().filter(
+    ({ id }) => id === "claude" || id === "antigravity" || id === "gemini" || id === "grok",
+  );
+}
 
 function refreshAfterReveal() {
   if (document.hidden) return;
   if (missedRefreshCycle(Date.now(), nextRefreshAt, POLL_MS)) deferClaudeAfterResume();
-  void refresh(RESUME_PROVIDERS, { markUpdated: false });
+  void refresh(resumeProviders(), { markUpdated: false });
 }
 
 document.addEventListener("visibilitychange", refreshAfterReveal);

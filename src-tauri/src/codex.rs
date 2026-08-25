@@ -202,7 +202,7 @@ async fn live() -> Result<ProviderQuota, String> {
 
 /// Both slots are optional and neither implies a period — a Plus account was
 /// measured with a weekly `primary_window` and nothing in `secondary_window`.
-/// See §7: the label comes from the reported duration, never from the position.
+/// See §8: the label comes from the reported duration, never from the position.
 fn windows_from(rate_limit: &RateLimit) -> Vec<QuotaWindow> {
     [&rate_limit.primary_window, &rate_limit.secondary_window]
         .into_iter()

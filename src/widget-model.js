@@ -1,12 +1,22 @@
 export const WIDGET_PROVIDERS = [
   { id: "claude", name: "Claude", stripName: "CL" },
   { id: "codex", name: "Codex", stripName: "CO" },
+  { id: "antigravity", name: "Antigravity", stripName: "AG" },
   { id: "gemini", name: "Gemini", stripName: "GE" },
   { id: "grok", name: "Grok", stripName: "GR" },
 ];
 
 export function compactProviderName(provider, strip) {
   return strip ? provider.stripName : provider.name;
+}
+
+// The snapshot still carries results for hidden providers (their schedule and
+// cached rows survive a hide), so the companion filters by preference itself.
+export function visibleProviders(providers, results, hiddenProviders = []) {
+  return providers.filter(
+    ({ id }) =>
+      !hiddenProviders.includes(id) && results[id] && results[id].status !== "not_configured",
+  );
 }
 
 export function isSevenDayWindow(window_) {
@@ -25,8 +35,12 @@ export function compactWindowLabel(window_) {
   return window_.label.length > 8 ? `${window_.label.slice(0, 7)}…` : window_.label;
 }
 
+// Grok shows its single seven-day pool; Antigravity shows the weekly bucket of
+// each of its two pools. The five-hour buckets stay on the dashboard.
 export function widgetWindows(providerId, windows = []) {
-  return providerId === "grok" ? windows.filter(isSevenDayWindow).slice(0, 1) : windows;
+  if (providerId === "grok") return windows.filter(isSevenDayWindow).slice(0, 1);
+  if (providerId === "antigravity") return windows.filter(isSevenDayWindow);
+  return windows;
 }
 
 export function quotaTone(percent) {

@@ -396,7 +396,7 @@ fn api_request(
         .header("anthropic-beta", ANTHROPIC_BETA)
 }
 
-fn provider_cache_dir() -> Option<PathBuf> {
+pub(crate) fn provider_cache_dir() -> Option<PathBuf> {
     dirs::data_local_dir().map(|dir| dir.join("ai-quota-deck").join("provider-cache"))
 }
 

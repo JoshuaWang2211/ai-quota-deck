@@ -12,6 +12,12 @@ export function missedRefreshCycle(now, scheduledAt, cycleMs) {
   return Boolean(scheduledAt && now - scheduledAt >= cycleMs);
 }
 
+// A provider the user unticked leaves the schedule entirely: no card, no
+// request. Ids the hide-list names but this build does not know are ignored.
+export function enabledProviders(providers, hiddenProviders = []) {
+  return providers.filter(({ id }) => !hiddenProviders.includes(id));
+}
+
 // A backend-provided 429 deadline replaces the healthy polling cadence for
 // that retry. Rust has already guaranteed that the deadline is no earlier than
 // Claude's healthy floor. The small global gap still protects duplicate window

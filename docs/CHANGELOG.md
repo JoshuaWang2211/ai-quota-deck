@@ -4,6 +4,16 @@ All notable changes to AI Quota Deck are documented here.
 
 ---
 
+## v0.3.0 - Unreleased
+
+- Added Google Antigravity as a fifth provider. The deck reads the IDE's local language server (the same source the IDE's own quota panel uses) and shows the weekly and five-hour limits for the Gemini pool and the Claude + GPT pool. Antigravity IDE must be running; while it is closed the last snapshot stays visible as cached for up to 24 hours, after which the card asks you to open the IDE. Nothing is sent to Google and no Google sign-in is read or refreshed.
+- Added a provider picker: untick any provider in the **Providers** panel to hide its card from the Dashboard, Widget, and Strip. Hidden providers are not polled at all and reappear with their previous data the moment they are re-enabled. Downgrading to an older version discards the hidden list.
+- Widget and Strip now show Antigravity's two weekly limits (abbreviated `AG` in Strip) and resize when providers are hidden.
+- Preference writes (`widget.json`) are now atomic, so an interrupted write can no longer reset saved positions and view modes.
+- Version bumped to 0.3.0 across the app, installer, dashboard footer, and Browser Bridge.
+
+---
+
 ## v0.2.3 - 2026-08-16
 
 - Fixed a persistent Claude 429 loop: the deck was cutting Anthropic's observed `Retry-After` from 1,073 seconds to its 15-minute fallback ceiling, then retrying early. Server deadlines are now preserved with a five-second edge buffer; no-header failures back off for 6, 12, 24, 48, then 60 minutes.

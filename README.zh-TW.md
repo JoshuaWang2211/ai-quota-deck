@@ -1,6 +1,6 @@
 # 📊 AI Quota Deck
 
-集中查看 Claude Code、Codex、Gemini 與 Grok 使用額度的 Windows 系統匣工具。
+集中查看 Claude Code、Codex、Antigravity、Gemini 與 Grok 使用額度的 Windows 系統匣工具。
 
 📘 [English](./README.md)
 
@@ -33,6 +33,7 @@ Dashboard 會顯示重置時間、使用速度、方案與快取狀態；Widget 
 |---|---|---|
 | **Claude** | 5 小時、每週，以及可用的模型專屬額度 | 登入 Claude Code |
 | **Codex** | Free 顯示每月；Plus 顯示每週 | 登入 Codex Desktop |
+| **Antigravity** | Gemini 池與 Claude + GPT 池各自的每週與 5 小時額度 | 保持 Antigravity IDE 開啟 |
 | **Gemini** | 5 小時、每週 | [進階 Browser Bridge 設定](#進階gemini-與-grok) |
 | **Grok** | 每週與各產品細目；免費帳號則顯示查詢額度 | Browser Bridge，或 Grok Build 備援 |
 
@@ -41,6 +42,7 @@ Dashboard 會顯示重置時間、使用速度、方案與快取狀態；Widget 
 其他功能：
 
 - Dashboard、Widget 與 Strip 三種顯示方式
+- 可勾選要顯示哪些服務；隱藏的服務完全不會被查詢
 - 可置頂、記住位置並鎖定移動的 Widget
 - 可放在螢幕任意位置，或釘在 Windows 工作列上方且不占用工作區的精簡橫向 Strip
 - 淺色、深色與跟隨系統主題
@@ -56,13 +58,15 @@ Dashboard 會顯示重置時間、使用速度、方案與快取狀態；Widget 
 
 **系統需求：Windows 10 或 11。**
 
-1. [點此下載最新安裝檔](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.2.3_x64-setup.exe)。
+1. [點此下載最新安裝檔](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.3.0_x64-setup.exe)。
 2. 執行安裝檔，再啟動 **AI Quota Deck**。
 3. 關閉視窗會回到系統匣；左鍵點擊系統匣圖示即可重新開啟。
 
 **Codex：** 只需在 Codex Desktop 登入即可。
 
 **Claude：** 若沒有偵測到 Claude Code，請先安裝它，在終端機執行一次 `claude` 並完成登入；之後不必讓 CLI 持續執行。
+
+**Antigravity：** 在 Antigravity IDE 登入一次，想看即時數字時保持 IDE 開啟。App 只讀取 IDE 在 `127.0.0.1` 的本機 language server；IDE 關閉時會保留最後一次結果並標示 `cached`，最多 24 小時，之後卡片會提示開啟 IDE。
 
 ---
 
@@ -81,7 +85,7 @@ Widget 與 Strip 會各自記住位置。兩種畫面都可從自身按鈕或系
 
 > 這段設定比較麻煩，需要開啟 Chromium 開發人員模式、手動載入未封裝擴充功能，並保留已登入的 Gemini 或 Grok 分頁。
 
-Gemini 與 Grok 必須透過隨附的 **AI Quota Deck Browser Bridge** 從瀏覽器讀取用量。若只使用 Claude Code 與 Codex，可以跳過本節。
+Gemini 與 Grok 必須透過隨附的 **AI Quota Deck Browser Bridge** 從瀏覽器讀取用量。若只使用 Claude Code、Codex 與 Antigravity，可以跳過本節。
 
 - Gemini 必須安裝 Bridge。
 - Grok 優先使用 Bridge，也可退回讀取已登入的 Grok Build CLI。
@@ -89,7 +93,7 @@ Gemini 與 Grok 必須透過隨附的 **AI Quota Deck Browser Bridge** 從瀏覽
 
 ### 設定步驟
 
-1. 先啟動一次 AI Quota Deck，再點擊 **Set up providers**。
+1. 先啟動一次 AI Quota Deck，再點擊 **Providers**（在還沒偵測到任何服務前，按鈕會顯示 **Set up providers**）。
 2. 複製或開啟 App 顯示的 Bridge 資料夾：
 
    ```text
@@ -132,6 +136,8 @@ Gemini 與 Grok 必須透過隨附的 **AI Quota Deck Browser Bridge** 從瀏覽
 
 **Claude 顯示 token rejected：** App 會在背景請已安裝的 Claude Code CLI 更新 token，然後自動重試。若仍失敗，再手動開啟一次 Claude Code。
 
+**Antigravity 提示開啟 IDE：** App 只能在 Antigravity IDE 執行中讀取額度。開啟 IDE 後等待一個更新週期即可。
+
 **Windows 顯示未知發行者：** 目前版本尚未加入程式碼簽章，請只從本專案的 GitHub Releases 頁面下載。
 
 ---
@@ -142,6 +148,7 @@ AI Quota Deck 沒有遙測，也不會上傳資料。
 
 - 使用支援的桌面 App 或 CLI 已儲存的登入資料。
 - 不會讀取或使用各服務的 refresh token。Claude 回傳 `401` 時，只會在背景執行官方 `claude update` 並重讀 access token；此指令也可能同時更新 Claude Code。
+- Antigravity 只從 IDE 在 `127.0.0.1` 的本機 language server 讀取；不會讀取、儲存或更新任何 Google 登入。
 - Bridge 只能讀取 `gemini.google.com` 與 `grok.com`。
 - 只有額度、重置時間、服務／帳號代號與觀測時間會傳到 App；Cookie 與頁面 token 留在瀏覽器中。
 

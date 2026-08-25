@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  enabledProviders,
   isUserAway,
   missedRefreshCycle,
   providerRequestFloor,
@@ -12,6 +13,7 @@ import {
   compactProviderName,
   compactWindowLabel,
   quotaTone,
+  visibleProviders,
   WIDGET_PROVIDERS,
   widgetWindows,
 } from "../src/widget-model.js";
@@ -90,10 +92,22 @@ test("widget shows only Grok's seven-day pool", () => {
   assert.deepEqual(widgetWindows("gemini", windows), windows);
 });
 
+test("widget keeps both Antigravity weekly pools and drops the five-hour ones", () => {
+  const windows = [
+    { label: "Weekly · Gemini", window_seconds: 604_800 },
+    { label: "Session (5h) · Gemini", window_seconds: 18_000 },
+    { label: "Weekly · Claude+GPT", window_seconds: 604_800 },
+    { label: "Session (5h) · Claude+GPT", window_seconds: 18_000 },
+  ];
+  assert.deepEqual(widgetWindows("antigravity", windows), [windows[0], windows[2]]);
+  assert.equal(compactWindowLabel(windows[0]), "Gemini");
+  assert.equal(compactWindowLabel(windows[2]), "Claude+GPT");
+});
+
 test("strip shortens provider titles and widget keeps the full name", () => {
   assert.deepEqual(
     WIDGET_PROVIDERS.map((provider) => compactProviderName(provider, true)),
-    ["CL", "CO", "GE", "GR"],
+    ["CL", "CO", "AG", "GE", "GR"],
   );
   assert.equal(compactProviderName(WIDGET_PROVIDERS[0], false), "Claude");
 });
@@ -102,4 +116,37 @@ test("widget colors match the extension thresholds", () => {
   assert.equal(quotaTone(69.9), "ok");
   assert.equal(quotaTone(70), "warning");
   assert.equal(quotaTone(90), "critical");
+});
+
+test("a hidden provider leaves the schedule and unknown ids are ignored", () => {
+  const providers = [{ id: "claude" }, { id: "codex" }];
+  assert.deepEqual(enabledProviders(providers, ["claude"]), [providers[1]]);
+  assert.deepEqual(enabledProviders(providers, []), providers);
+  assert.deepEqual(enabledProviders(providers), providers);
+  assert.deepEqual(enabledProviders(providers, ["antigravity"]), providers);
+});
+
+test("widget hides unticked and unconfigured providers but keeps broken ones", () => {
+  const results = {
+    claude: { status: "ok" },
+    codex: { status: "not_configured" },
+    gemini: { status: "error" },
+    grok: { status: "unavailable" },
+  };
+  const ids = (providers) => providers.map(({ id }) => id);
+  assert.deepEqual(ids(visibleProviders(WIDGET_PROVIDERS, results, ["claude"])), [
+    "gemini",
+    "grok",
+  ]);
+  assert.deepEqual(ids(visibleProviders(WIDGET_PROVIDERS, results)), [
+    "claude",
+    "gemini",
+    "grok",
+  ]);
+  assert.deepEqual(ids(visibleProviders(WIDGET_PROVIDERS, results, ["antigravity"])), [
+    "claude",
+    "gemini",
+    "grok",
+  ]);
+  assert.deepEqual(visibleProviders(WIDGET_PROVIDERS, {}, []), []);
 });

@@ -1,6 +1,6 @@
 # 📊 AI Quota Deck
 
-A Windows tray dashboard for Claude Code, Codex, Gemini, and Grok usage limits.
+A Windows tray dashboard for Claude Code, Codex, Antigravity, Gemini, and Grok usage limits.
 
 📘 [繁體中文](./README.zh-TW.md)
 
@@ -33,6 +33,7 @@ The dashboard includes reset times, pace indicators, plan badges, and cached-dat
 |---|---|---|
 | **Claude** | 5-hour, weekly, and model-specific limits when available | Sign in to Claude Code |
 | **Codex** | Monthly (Free) or weekly (Plus), depending on the account | Sign in to Codex Desktop |
+| **Antigravity** | Weekly and 5-hour limits for the Gemini pool and the Claude + GPT pool | Keep Antigravity IDE open |
 | **Gemini** | 5-hour and weekly | [Advanced Browser Bridge setup](#advanced-gemini-and-grok) |
 | **Grok** | Weekly and product breakdown; free query limits when applicable | Browser Bridge, or Grok Build fallback |
 
@@ -41,6 +42,7 @@ Providers that are not configured stay hidden. Each provider refreshes independe
 Other features:
 
 - Dashboard, Widget, and Strip views
+- Choose which providers appear; hidden providers are not polled at all
 - Always-on-top widget with a remembered, lockable position
 - Compact horizontal strip that can float anywhere or pin above the Windows taskbar without reserving work area
 - Light, dark, and system themes
@@ -56,13 +58,15 @@ In Strip view, click the pin-shaped taskbar button, then drag the Strip to any f
 
 **Requires Windows 10 or 11.**
 
-1. [Download the latest installer](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.2.3_x64-setup.exe).
+1. [Download the latest installer](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.3.0_x64-setup.exe).
 2. Run it, then launch **AI Quota Deck**.
 3. Close the window to return it to the system tray; left-click the tray icon to reopen it.
 
 **Codex:** sign in to Codex Desktop.
 
 **Claude:** if Claude Code is not detected, install it, run `claude` once in a terminal, and complete sign-in. The CLI does not need to remain open.
+
+**Antigravity:** sign in to Antigravity IDE once and keep it open while you want live numbers. The deck reads the IDE's local language server on `127.0.0.1`; while the IDE is closed the last reading stays visible as `cached` for up to 24 hours, then the card asks you to open the IDE.
 
 ---
 
@@ -81,7 +85,7 @@ Widget and Strip remember separate positions. Open the dashboard or hide either 
 
 > This setup is more involved. It requires Chromium Developer mode, a manually loaded unpacked extension, and a signed-in Gemini or Grok tab.
 
-Gemini and Grok usage is read from a browser tab through the bundled **AI Quota Deck Browser Bridge**. Skip this section if you only use Claude Code and Codex.
+Gemini and Grok usage is read from a browser tab through the bundled **AI Quota Deck Browser Bridge**. Skip this section if you only use Claude Code, Codex, and Antigravity.
 
 - Gemini requires the bridge.
 - Grok prefers the bridge but can fall back to a signed-in Grok Build CLI.
@@ -89,7 +93,7 @@ Gemini and Grok usage is read from a browser tab through the bundled **AI Quota 
 
 ### Setup
 
-1. Launch AI Quota Deck once and click **Set up providers**.
+1. Launch AI Quota Deck once and click **Providers** (it reads **Set up providers** until the deck has found its first provider).
 2. Copy or open the bridge folder shown by the app:
 
    ```text
@@ -132,6 +136,8 @@ If you only need to check Gemini or Grok usage without running the desktop app, 
 
 **Claude reports a rejected token:** the deck asks the installed Claude Code CLI to refresh it in the background, then retries automatically. If that fails, open Claude Code once.
 
+**Antigravity asks you to open the IDE:** the deck can only read Antigravity while the IDE is running. Start it and allow one refresh cycle.
+
 **Windows reports an unknown publisher:** current releases are not code-signed. Download them only from this project's GitHub Releases page.
 
 ---
@@ -142,6 +148,7 @@ AI Quota Deck has no telemetry and uploads nothing.
 
 - It uses sign-ins already stored by the supported desktop or CLI clients.
 - It never reads or uses provider refresh tokens. After a Claude `401`, it runs the official `claude update` command in the background and rereads Claude Code's access token; this command may also update Claude Code itself.
+- Antigravity is read from the IDE's local language server on `127.0.0.1` only. The deck never reads, stores, or refreshes a Google sign-in.
 - The bridge can read only `gemini.google.com` and `grok.com`.
 - Only quota values, reset times, provider/account slots, and observation times reach the app. Cookies and page tokens stay in the browser.
 

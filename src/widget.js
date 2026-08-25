@@ -2,6 +2,7 @@ import {
   compactProviderName,
   compactWindowLabel,
   quotaTone,
+  visibleProviders,
   WIDGET_PROVIDERS,
   widgetWindows,
 } from "./widget-model.js";
@@ -19,7 +20,13 @@ const lockWidgetEl = document.getElementById("lock-widget");
 const hideWidgetEl = document.getElementById("hide-widget");
 
 let snapshot = { results: {}, backoffUntil: {}, updatedAt: null };
-let preferences = { visible: false, locked: false, strip: false, taskbar_overlay: false };
+let preferences = {
+  visible: false,
+  locked: false,
+  strip: false,
+  taskbar_overlay: false,
+  hidden_providers: [],
+};
 let resizeFrame = null;
 
 const nowSec = () => Math.floor(Date.now() / 1000);
@@ -211,13 +218,16 @@ function stripContentWidth() {
 }
 
 function render() {
-  const configured = WIDGET_PROVIDERS.filter(
-    ({ id }) => snapshot.results[id] && snapshot.results[id].status !== "not_configured",
+  const configured = visibleProviders(
+    WIDGET_PROVIDERS,
+    snapshot.results,
+    preferences.hidden_providers,
   );
+  const allHidden = WIDGET_PROVIDERS.every(({ id }) => preferences.hidden_providers.includes(id));
   providersEl.replaceChildren(
     ...(configured.length
       ? configured.map((provider) => renderProvider(provider, snapshot.results[provider.id]))
-      : [el("p", "widget-empty", "No providers detected")]),
+      : [el("p", "widget-empty", allHidden ? "All providers hidden" : "No providers detected")]),
   );
   statusEl.textContent = age(snapshot.updatedAt);
   scheduleResize();
