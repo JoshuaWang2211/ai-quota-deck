@@ -20,6 +20,9 @@
   --rule: rgba(0, 0, 0, 0.08);
   --chip: rgba(0, 0, 0, 0.05);
   --hover: rgba(255, 255, 255, 0.45);
+  --surface: rgba(255, 255, 255, 0.38);
+  --surface-strong: rgba(250, 252, 255, 0.92);
+  --shadow: 0 12px 30px rgba(44, 62, 80, 0.14);
 
   /* Same three states in both themes: a quota that is nearly gone should not
      change colour when the lights do. */
@@ -44,6 +47,9 @@
   --rule: rgba(255, 255, 255, 0.08);
   --chip: rgba(255, 255, 255, 0.07);
   --hover: rgba(255, 255, 255, 0.12);
+  --surface: rgba(255, 255, 255, 0.055);
+  --surface-strong: rgba(27, 39, 50, 0.96);
+  --shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
   --pace-ahead: #f1c40f;
 }
 
@@ -317,7 +323,7 @@ body {
   margin-top: 10px;
 }
 
-/* ── Empty state and optional provider setup ─────────────────────────── */
+/* ── Source picker and empty state ───────────────────────────────────── */
 
 .provider-empty {
   padding: 34px 28px 26px;
@@ -341,96 +347,267 @@ body {
 
 .provider-controls {
   flex: none;
-  padding: 0 16px 10px;
+  padding: 9px 16px 10px;
+  border-bottom: 1px solid var(--rule);
 }
 
-.provider-controls:empty {
-  display: none;
-}
-
-.manage-providers {
-  padding: 6px 0;
-  border: 0;
-  background: none;
-  color: var(--accent);
+.sources-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 5px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--title);
   font: inherit;
-  font-size: 11px;
+  text-align: left;
   cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
 }
 
-.manage-providers:hover {
-  text-decoration: underline;
+.sources-trigger:hover {
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  background: var(--hover);
 }
 
-.manage-providers:focus-visible {
+.sources-trigger:active {
+  transform: translateY(1px);
+}
+
+.sources-trigger:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
-.setup-panel {
-  padding: 10px 12px;
+.source-orbit {
+  display: flex;
+  padding-left: 4px;
+}
+
+.source-dot {
+  width: 17px;
+  height: 17px;
+  margin-left: -4px;
+  border: 2px solid var(--surface-strong);
+  border-radius: 50%;
+  background: var(--source-color);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
+  transition: opacity 0.16s ease, filter 0.16s ease;
+}
+
+.source-dot.is-hidden {
+  opacity: 0.22;
+  filter: grayscale(1);
+}
+
+[data-source="claude"] { --source-color: #d97757; }
+[data-source="codex"] { --source-color: #10a37f; }
+[data-source="antigravity"] { --source-color: #7c67e8; }
+[data-source="gemini"] { --source-color: #4285f4; }
+[data-source="grok"] { --source-color: #536471; }
+
+.sources-trigger-copy {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+.sources-trigger-label {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.sources-trigger-meta {
+  color: var(--loading);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sources-chevron {
+  width: 7px;
+  height: 7px;
+  margin: -3px 4px 0 0;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  color: var(--loading);
+  transform: rotate(45deg);
+  transition: transform 0.16s ease;
+}
+
+.sources-trigger[aria-expanded="true"] .sources-chevron {
+  margin-top: 3px;
+  transform: rotate(225deg);
+}
+
+.source-picker {
+  margin-top: 8px;
+  overflow: hidden;
   border: 1px solid var(--rule);
-  border-radius: 8px;
-  background: var(--chip);
+  border-radius: 12px;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
 }
 
-.setup-intro {
-  margin: 0;
-  color: var(--label);
+.source-picker-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 12px 8px;
+}
+
+.source-picker-head strong {
+  color: var(--title);
   font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
 }
 
-.setup-list {
-  margin: 10px 0 0;
-  padding: 0;
-  list-style: none;
+.source-picker-head span {
+  color: var(--label);
+  font-size: 9.5px;
 }
 
-.setup-item + .setup-item {
-  margin-top: 10px;
-  padding-top: 10px;
+.source-list {
   border-top: 1px solid var(--rule);
 }
 
-.setup-name {
+.source-option {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 10px;
+  min-height: 51px;
+  padding: 7px 11px;
+  cursor: pointer;
+  transition: background 0.14s ease;
+}
+
+.source-option + .source-option {
+  border-top: 1px solid var(--rule);
+}
+
+.source-option:hover {
+  background: var(--hover);
+}
+
+.source-mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--source-color);
+  color: white;
+  font-size: 11px;
+  font-weight: 750;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  transition: opacity 0.16s ease, filter 0.16s ease;
+}
+
+.source-option.is-hidden .source-mark {
+  opacity: 0.42;
+  filter: grayscale(0.7);
+}
+
+.source-copy,
+.source-name {
   display: flex;
   align-items: center;
+  min-width: 0;
+}
+
+.source-copy {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.source-name {
   gap: 6px;
   color: var(--title);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 650;
 }
 
-.setup-name input {
-  margin: 0;
-  accent-color: var(--accent);
-}
-
-/* Native controls follow the user agent's scheme rather than the app's, so a
-   dark panel would otherwise carry a light checkbox. */
-:root[data-theme="dark"] .setup-name input {
-  color-scheme: dark;
-}
-
-.setup-optional {
-  padding: 1px 5px;
-  border-radius: 7px;
-  background: var(--track);
-  color: var(--loading);
-  font-size: 9px;
-  font-weight: 400;
-}
-
-.setup-item p {
-  margin: 3px 0 0;
+.source-status {
+  max-width: 100%;
+  overflow: hidden;
   color: var(--label);
   font-size: 11px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-optional {
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: var(--chip);
+  color: var(--loading);
+  font-size: 8.5px;
+  font-weight: 500;
+}
+
+.source-toggle {
+  position: relative;
+  width: 34px;
+  height: 20px;
+}
+
+.source-toggle input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.source-switch {
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  background: var(--track);
+  box-shadow: inset 0 0 0 1px var(--rule);
+  transition: background 0.18s ease;
+}
+
+.source-switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.24);
+  transition: transform 0.18s ease;
+}
+
+.source-toggle input:checked + .source-switch {
+  background: var(--accent);
+}
+
+.source-toggle input:checked + .source-switch::after {
+  transform: translateX(14px);
+}
+
+.source-toggle input:focus-visible + .source-switch {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .bridge-help {
-  margin-top: 10px;
-  padding-top: 10px;
+  padding: 10px 12px 11px;
   border-top: 1px solid var(--rule);
+  background: var(--surface);
 }
 
 .bridge-step {
@@ -510,8 +687,28 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .track-fill {
+  .track-fill,
+  .sources-trigger,
+  .source-dot,
+  .source-mark,
+  .source-switch,
+  .source-switch::after,
+  .sources-chevron {
     transition: none;
   }
 
+}
+
+@media (max-width: 400px) {
+  .deck-head {
+    gap: 5px;
+  }
+
+  .tool span {
+    display: none;
+  }
+
+  .tool {
+    padding-inline: 6px;
+  }
 }

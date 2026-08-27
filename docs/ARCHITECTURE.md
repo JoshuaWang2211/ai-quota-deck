@@ -77,7 +77,7 @@ The same panel lists every provider with a checkbox. An unticked provider is
 not polled at all — polling is a question of politeness and rate limiting (§2),
 and a card nobody is looking at should not spend Claude's 429 budget. Its last
 results, its retry schedule, and Claude's persisted cooldown are left untouched,
-so re-ticking it shows the previous rows immediately and the next request still
+so re-enabling it shows the previous rows immediately and the next request still
 passes every existing gate. The hide-list is stored as `hidden_providers` in
 `widget.json` beside the view preferences, which is the one store the
 dashboard, the companion window, and the tray already share; an absent field

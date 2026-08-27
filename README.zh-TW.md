@@ -42,7 +42,7 @@ Dashboard 會顯示重置時間、使用速度、方案與快取狀態；Widget 
 其他功能：
 
 - Dashboard、Widget 與 Strip 三種顯示方式
-- 可勾選要顯示哪些服務；隱藏的服務完全不會被查詢
+- 可從 Dashboard 上方快速切換要顯示哪些服務；隱藏的服務完全不會被查詢
 - 可置頂、記住位置並鎖定移動的 Widget
 - 可放在螢幕任意位置，或釘在 Windows 工作列上方且不占用工作區的精簡橫向 Strip
 - 淺色、深色與跟隨系統主題
@@ -93,7 +93,7 @@ Gemini 與 Grok 必須透過隨附的 **AI Quota Deck Browser Bridge** 從瀏覽
 
 ### 設定步驟
 
-1. 先啟動一次 AI Quota Deck，再點擊 **Providers**（在還沒偵測到任何服務前，按鈕會顯示 **Set up providers**）。
+1. 先啟動一次 AI Quota Deck，再開啟 Dashboard 上方的 **AI sources**。
 2. 複製或開啟 App 顯示的 Bridge 資料夾：
 
    ```text

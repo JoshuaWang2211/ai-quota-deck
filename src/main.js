@@ -329,7 +329,7 @@ function renderEmptyState(checked, allHidden) {
   const section = el("section", "provider-empty");
   if (allHidden) {
     section.append(el("h2", null, "All providers hidden"));
-    section.append(el("p", null, "Tick a provider under Providers to show it again."));
+    section.append(el("p", null, "Use AI sources above to bring a provider back."));
     return section;
   }
   section.append(el("h2", null, checked ? "No providers detected" : "Checking for providers…"));
@@ -348,50 +348,75 @@ function renderEmptyState(checked, allHidden) {
 function renderProviderControls(missingProviders) {
   providerControlsEl.replaceChildren();
 
-  // Lead with setup only while every enabled provider is still waiting for a
-  // sign-in; otherwise the panel is simply where providers are ticked on and off.
-  const button = el(
-    "button",
-    "manage-providers",
-    missingProviders.length > 0 && configuredProviders().length === 0
-      ? "Set up providers"
-      : "Providers",
-  );
+  const activeIds = new Set(activeProviders().map(({ id }) => id));
+  const button = el("button", "sources-trigger");
   button.type = "button";
-  button.setAttribute("aria-expanded", setupExpanded.toString());
+  button.setAttribute("aria-expanded", sourcesExpanded.toString());
+  button.setAttribute("aria-controls", "source-picker");
+  button.setAttribute("aria-label", `Choose AI sources. ${activeIds.size} of ${PROVIDERS.length} shown.`);
+
+  const orbit = el("span", "source-orbit");
+  orbit.setAttribute("aria-hidden", "true");
+  for (const provider of PROVIDERS) {
+    const dot = el("span", "source-dot");
+    dot.dataset.source = provider.id;
+    if (!activeIds.has(provider.id)) dot.classList.add("is-hidden");
+    orbit.append(dot);
+  }
+
+  const copy = el("span", "sources-trigger-copy");
+  copy.append(
+    el("span", "sources-trigger-label", "AI sources"),
+    el("span", "sources-trigger-meta", `${activeIds.size} of ${PROVIDERS.length} shown`),
+  );
+  button.append(orbit, copy, el("span", "sources-chevron"));
   button.addEventListener("click", () => {
-    setupExpanded = !setupExpanded;
+    sourcesExpanded = !sourcesExpanded;
     render();
+    if (sourcesExpanded) {
+      document.querySelector(".source-toggle input")?.focus();
+    }
   });
   providerControlsEl.append(button);
 
-  if (!setupExpanded) return;
+  if (!sourcesExpanded) return;
 
-  const panel = el("div", "setup-panel");
-  panel.append(
-    el(
-      "p",
-      "setup-intro",
-      "Claude, Codex, and Antigravity use existing desktop sign-ins. Gemini and Grok use the optional Browser Bridge.",
-    ),
+  const panel = el("div", "source-picker");
+  panel.id = "source-picker";
+  const heading = el("div", "source-picker-head");
+  heading.append(
+    el("strong", null, "Displayed providers"),
+    el("span", null, "Hidden sources are not polled."),
   );
+  panel.append(heading);
 
-  const list = el("ul", "setup-list");
+  const list = el("div", "source-list");
   for (const provider of PROVIDERS) {
-    const item = el("li", "setup-item");
-    const head = el("label", "setup-name");
+    const visible = activeIds.has(provider.id);
+    const item = el("label", "source-option");
+    item.dataset.source = provider.id;
+    if (!visible) item.classList.add("is-hidden");
+
+    const mark = el("span", "source-mark", provider.name.slice(0, 1));
+    mark.dataset.source = provider.id;
+    mark.setAttribute("aria-hidden", "true");
+
+    const details = el("span", "source-copy");
+    const name = el("span", "source-name", provider.name);
+    if (provider.optional) name.append(el("span", "source-optional", "Bridge"));
+    details.append(name, el("span", "source-status", providerStatus(provider, visible)));
+
+    const toggle = el("span", "source-toggle");
     const checkbox = el("input");
     checkbox.type = "checkbox";
-    checkbox.checked = !widgetPreferences.hidden_providers.includes(provider.id);
+    checkbox.checked = visible;
+    checkbox.dataset.provider = provider.id;
+    checkbox.setAttribute("aria-label", `Show ${provider.name}`);
     checkbox.addEventListener("change", () => {
       void setProviderHidden(provider, !checkbox.checked, checkbox);
     });
-    head.append(checkbox, document.createTextNode(provider.name));
-    if (provider.optional) head.append(el("span", "setup-optional", "Optional"));
-    item.append(head);
-    if (results[provider.id]?.status === "not_configured") {
-      item.append(el("p", null, provider.setup));
-    }
+    toggle.append(checkbox, el("span", "source-switch"));
+    item.append(mark, details, toggle);
     list.append(item);
   }
   panel.append(list);
@@ -399,6 +424,17 @@ function renderProviderControls(missingProviders) {
     panel.append(renderBridgeHelp());
   }
   providerControlsEl.append(panel);
+}
+
+function providerStatus(provider, visible) {
+  if (!visible) return "Hidden · polling paused";
+  const quota = results[provider.id];
+  if (!quota) return "Checking connection…";
+  if (quota.status === "not_configured") return provider.setup;
+  if (quota.status === "error") return "Shown · retrying automatically";
+  if (quota.status === "action_required") return "Shown · needs attention";
+  if (quota.status === "unavailable") return "Shown · no quota available";
+  return "Shown on Dashboard, Widget & Strip";
 }
 
 async function setProviderHidden(provider, hidden, checkbox) {
@@ -410,6 +446,7 @@ async function setProviderHidden(provider, hidden, checkbox) {
     return;
   }
   render();
+  document.querySelector(`[data-provider="${provider.id}"]`)?.focus();
   if (hidden) return;
 
   // Go through fetchProvider directly rather than refresh([provider]): the
@@ -421,6 +458,7 @@ async function setProviderHidden(provider, hidden, checkbox) {
     lastUpdatedAt = new Date();
   }
   render();
+  document.querySelector(`[data-provider="${provider.id}"]`)?.focus();
 }
 
 // The one thing the setup steps cannot be written down without: where the app
@@ -521,8 +559,21 @@ let inFlight = false;
 let lastUpdatedAt = null;
 let nextRefreshAt = null;
 let refreshTimer = null;
-let setupExpanded = false;
+let sourcesExpanded = false;
 let bridgePath = null;
+
+document.addEventListener("pointerdown", (event) => {
+  if (!sourcesExpanded || providerControlsEl.contains(event.target)) return;
+  sourcesExpanded = false;
+  render();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !sourcesExpanded) return;
+  sourcesExpanded = false;
+  render();
+  document.querySelector(".sources-trigger")?.focus();
+});
 
 function slot(id) {
   return (schedule[id] ??= {

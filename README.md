@@ -93,7 +93,7 @@ Gemini and Grok usage is read from a browser tab through the bundled **AI Quota 
 
 ### Setup
 
-1. Launch AI Quota Deck once and click **Providers** (it reads **Set up providers** until the deck has found its first provider).
+1. Launch AI Quota Deck once and open **AI sources** near the top of the dashboard.
 2. Copy or open the bridge folder shown by the app:
 
    ```text
