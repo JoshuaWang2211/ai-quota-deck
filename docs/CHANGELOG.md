@@ -4,7 +4,7 @@ All notable changes to AI Quota Deck are documented here.
 
 ---
 
-## v0.3.0 - Unreleased
+## v0.3.0 - 2026-08-27
 
 - Added Google Antigravity as a fifth provider. The deck reads the IDE's local language server (the same source the IDE's own quota panel uses) and shows the weekly and five-hour limits for the Gemini pool and the Claude + GPT pool. Antigravity IDE must be running; while it is closed the last snapshot stays visible as cached for up to 24 hours, after which the card asks you to open the IDE. Nothing is sent to Google and no Google sign-in is read or refreshed.
 - Added a polished **AI sources** picker near the top of the dashboard. Color-coded provider identities, connection hints, and accessible switches make it easy to choose what appears in Dashboard, Widget, and Strip. Hidden providers are not polled at all and reappear with their previous data the moment they are re-enabled. Downgrading to an older version discards the hidden list.
