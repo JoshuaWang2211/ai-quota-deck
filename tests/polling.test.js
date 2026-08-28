@@ -89,6 +89,7 @@ test("widget shows only Grok's seven-day pool", () => {
     { label: "Weekly", window_seconds: 604_800 },
   ];
   assert.deepEqual(widgetWindows("grok", windows), [windows[1]]);
+  assert.deepEqual(widgetWindows("grok_bot", windows), [windows[1]]);
   assert.deepEqual(widgetWindows("gemini", windows), windows);
 });
 
@@ -107,7 +108,7 @@ test("widget keeps both Antigravity weekly pools and drops the five-hour ones", 
 test("strip shortens provider titles and widget keeps the full name", () => {
   assert.deepEqual(
     WIDGET_PROVIDERS.map((provider) => compactProviderName(provider, true)),
-    ["CL", "CO", "AG", "GE", "GR"],
+    ["CL", "CO", "AG", "GE", "GR", "GB"],
   );
   assert.equal(compactProviderName(WIDGET_PROVIDERS[0], false), "Claude");
 });

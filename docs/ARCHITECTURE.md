@@ -5,8 +5,9 @@ that were evaluated and rejected. Read it alongside the source to avoid
 relitigating decisions or missing non-obvious constraints.
 
 Every request shape and response sample below was **verified against live
-accounts on 2026-08-08 or 2026-08-09** unless explicitly marked otherwise. Where something is
-inference rather than measurement, it says so.
+accounts on 2026-08-08 or 2026-08-09**, and Grok Bot on **2026-08-28**, unless
+explicitly marked otherwise. Where something is inference rather than
+measurement, it says so.
 
 > **Sample payloads in this document are redacted.** Real responses from Claude
 > and Codex include `user_id`, `account_id`, and `email`. Never paste an
@@ -25,10 +26,11 @@ This is the single fact that determines the app's shape.
 | Grok | Browser session (primary); `~/.grok/auth.json` (fallback) | **Both** |
 | Gemini | `gemini.google.com` cookie **+ a token that only exists in a rendered page** | No |
 | Antigravity | `--csrf_token` on the IDE's language-server command line (process-local) | **Yes**, while the IDE runs |
+| Grok Bot | Chromium-encrypted short-lived access token in `%APPDATA%\Grok Bot` | **Yes**, through Windows DPAPI |
 
 The pattern is that a vendor's **CLI or desktop client** leaves an OAuth token in
 the user's home directory, and that token is enough to read the account's quota.
-Three of five do this. Gemini has no such client, so it is the hard exception
+Four of six do this. Gemini has no such client, so it is the hard exception
 (§6), and Antigravity keeps its credential inside a running process instead of
 on disk (§7). Grok deliberately uses both routes: browser data avoids the CLI's
 six-hour token expiry, while the disk token still works when no browser tab is
@@ -763,6 +765,36 @@ still speaks to Google under a borrowed identity. Keeping the IDE open is the
 same kind of requirement Gemini already imposes with its browser tab, and it
 costs the user nothing they are not already doing when they use Antigravity.
 
+### Grok Bot: a separate product and allowance
+
+Grok Bot uses Grok models, but its allowance is metered independently from both
+Grok/SuperGrok and Cursor. The Windows desktop app stores a Chromium-style
+profile in `%APPDATA%\Grok Bot`: `Local State` contains a DPAPI-wrapped AES key,
+and `sand-secrets.json` contains AES-256-GCM `v10` values for its machine id and
+accounts. The deck selects the active account and deserialises only
+`cursor-access-token`; the refresh-token field is intentionally absent from the
+Rust data shape and is never decoded or decrypted.
+
+The live call mirrors the app's Connect unary RPC:
+
+```text
+POST https://api2.cursor.sh/aiserver.v1.DashboardService/GetSandUsageStatus
+Content-Type: application/proto
+Connect-Protocol-Version: 1
+```
+
+The protobuf response supplies `usage_percent`, period start, next UTC reset,
+availability flags, and a Grok plan label. The period endpoints determine
+`window_seconds`; the card does not assume seven days merely because this is the
+only row. Pooled enterprise allowances and zero included limits are
+`unavailable`, because neither yields a meaningful individual percentage.
+
+Only the normalized plan, percent, reset, and observation time enter
+`%LOCALAPPDATA%\ai-quota-deck\provider-cache\grok-bot.json`. The snapshot expires
+after 24 hours or at its reset, whichever comes first. An expired or rejected
+access token is `action_required`: open Grok Bot so its own account machinery can
+renew it. AI Quota Deck never spends the refresh token.
+
 ---
 
 ## 8. Window periods are slots, not fixed durations
@@ -793,7 +825,7 @@ names the window, the app never guesses from its slot.**
 The full dashboard renders every reported window with reset and pace details.
 Widget and Strip reuse the same normalized data but compress it to period
 labels and percentages; Grok intentionally shows only its seven-day window.
-Strip further shortens provider titles to two letters — CL, CO, AG, GE, GR — so the
+Strip further shortens provider titles to two letters — CL, CO, AG, GE, GR, GB — so the
 bar stays narrow; the full name remains on hover. Compact values follow the
 companion extensions' thresholds: green below 70%, amber from 70%, and red
 from 90%.
@@ -961,6 +993,7 @@ gaps are not oversights — they are tiers nobody has run this against yet.
 | Grok | Free | **Measured through the extension.** Per-model query counts; no subscription window |
 | Antigravity | Google AI Pro | **Measured.** Two pools (Gemini; Claude + GPT), each with a weekly and a five-hour bucket |
 | Antigravity | Free, Ultra | Unseen. Free is documented as weekly-only; fewer buckets is expected, not an error |
+| Grok Bot | SuperGrok-linked | **Measured.** One independent weekly window with plan label `SuperGrok` |
 
 A plan with nothing to report is **not an error**. All providers route
 "the call worked and there is no such quota" to an `Unavailable` card: stated
@@ -991,7 +1024,7 @@ If your plan renders wrongly, the useful bug report is the raw response with
 
 ## 11. Stability outlook
 
-All five interfaces are undocumented and unversioned.
+All six interfaces are undocumented and unversioned.
 
 | Signal | Reading |
 |--------|---------|
@@ -1000,6 +1033,7 @@ All five interfaces are undocumented and unversioned.
 | Codex omits `rate_limits` from older session logs | The local format changed recently too |
 | Gemini's RPC id is Closure-generated | Changes whenever the quota service is refactored |
 | Antigravity's IDE server answers the summary call today while older builds only served per-model `GetUserStatus` | The local API surface moves with IDE releases; flags and process names can too |
+| Grok Bot's desktop RPC and Chromium secret schema are app-internal | Either can move with a desktop app update; protobuf unknown fields are skipped |
 
 Expect breakage on the order of "a few times a year, per provider". The design
 consequence: **each provider must fail independently.** One dead endpoint shows
@@ -1041,3 +1075,6 @@ one dead card, never an empty dashboard.
    started elevated while the deck was not, or an IDE update changed the server's
    command line — check that the language server process still carries
    `--csrf_token` and an `--app_data_dir` beginning with `antigravity`.
+9. **Grok Bot needs attention** → open Grok Bot once so it can renew its own
+   short-lived access token. The deck deliberately never handles its refresh
+   token. A recent unexpired quota-only snapshot remains visible for 24 hours.

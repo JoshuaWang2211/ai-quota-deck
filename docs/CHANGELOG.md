@@ -4,6 +4,16 @@ All notable changes to AI Quota Deck are documented here.
 
 ---
 
+## v0.3.1 - 2026-08-28
+
+- Added Grok Bot as a sixth, independent provider. It displays the weekly allowance reported by the signed-in Grok Bot desktop app, separately from Grok/SuperGrok usage.
+- Grok Bot credentials stay under the app's ownership: AI Quota Deck unlocks only the Chromium-encrypted, short-lived access token through Windows DPAPI and never deserializes, decrypts, or uses the refresh token. Expired credentials ask the user to reopen Grok Bot.
+- Added a quota-only Grok Bot snapshot for short outages. Cached values are discarded after 24 hours or as soon as their reset passes.
+- Added Grok Bot to Dashboard, Widget, Strip (`GB`), and the AI sources picker, with independent polling and error handling.
+- Version bumped to 0.3.1 across the app, installer, dashboard footer, and Browser Bridge.
+
+---
+
 ## v0.3.0 - 2026-08-27
 
 - Added Google Antigravity as a fifth provider. The deck reads the IDE's local language server (the same source the IDE's own quota panel uses) and shows the weekly and five-hour limits for the Gemini pool and the Claude + GPT pool. Antigravity IDE must be running; while it is closed the last snapshot stays visible as cached for up to 24 hours, after which the card asks you to open the IDE. Nothing is sent to Google and no Google sign-in is read or refreshed.

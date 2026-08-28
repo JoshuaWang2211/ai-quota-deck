@@ -47,10 +47,17 @@ const PROVIDERS = [
     setup: "Install the optional Browser Bridge (recommended), or sign in with Grok Build.",
     optional: true,
   },
+  {
+    id: "grok_bot",
+    name: "Grok Bot",
+    mark: "GB",
+    command: "grok_bot_quota",
+    setup: "Install the Grok Bot desktop app and sign in once.",
+  },
 ];
 
 // Three minutes, matching the sibling Claude tray tool's default. Reading a
-// quota costs no quota, so the only cost is request volume against five
+// quota costs no quota, so the only cost is request volume against six
 // undocumented endpoints — and one of them answers 429 if pushed.
 const POLL_MS = 180_000;
 
@@ -397,7 +404,7 @@ function renderProviderControls(missingProviders) {
     item.dataset.source = provider.id;
     if (!visible) item.classList.add("is-hidden");
 
-    const mark = el("span", "source-mark", provider.name.slice(0, 1));
+    const mark = el("span", "source-mark", provider.mark ?? provider.name.slice(0, 1));
     mark.dataset.source = provider.id;
     mark.setAttribute("aria-hidden", "true");
 
@@ -765,12 +772,18 @@ setInterval(() => {
 }, 30_000);
 
 // Chromium may throttle this WebView while the tray window is hidden. On
-// reveal, refresh browser-backed caches, notice an Antigravity IDE that has
-// started since, and let Claude catch up after an idle or locked stretch.
+  // reveal, refresh browser-backed caches, notice an Antigravity IDE or Grok
+  // Bot sign-in that appeared since, and let Claude catch up after an idle or
+  // locked stretch.
 // Provider floors and backoff still suppress duplicate calls.
 function resumeProviders() {
   return activeProviders().filter(
-    ({ id }) => id === "claude" || id === "antigravity" || id === "gemini" || id === "grok",
+    ({ id }) =>
+      id === "claude" ||
+      id === "antigravity" ||
+      id === "gemini" ||
+      id === "grok" ||
+      id === "grok_bot",
   );
 }
 

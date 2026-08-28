@@ -1,6 +1,6 @@
 # 📊 AI Quota Deck
 
-A Windows tray dashboard for Claude Code, Codex, Antigravity, Gemini, and Grok usage limits.
+A Windows tray dashboard for Claude Code, Codex, Antigravity, Gemini, Grok, and Grok Bot usage limits.
 
 📘 [繁體中文](./README.zh-TW.md)
 
@@ -36,6 +36,7 @@ The dashboard includes reset times, pace indicators, plan badges, and cached-dat
 | **Antigravity** | Weekly and 5-hour limits for the Gemini pool and the Claude + GPT pool | Keep Antigravity IDE open |
 | **Gemini** | 5-hour and weekly | [Advanced Browser Bridge setup](#advanced-gemini-and-grok) |
 | **Grok** | Weekly and product breakdown; free query limits when applicable | Browser Bridge, or Grok Build fallback |
+| **Grok Bot** | Independent weekly allowance | Sign in to the Grok Bot desktop app |
 
 Providers that are not configured stay hidden. Each provider refreshes independently, so one failure does not block the others.
 
@@ -58,7 +59,7 @@ In Strip view, click the pin-shaped taskbar button, then drag the Strip to any f
 
 **Requires Windows 10 or 11.**
 
-1. [Download the latest installer](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.3.0_x64-setup.exe).
+1. [Download the latest installer](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.3.1_x64-setup.exe).
 2. Run it, then launch **AI Quota Deck**.
 3. Close the window to return it to the system tray; left-click the tray icon to reopen it.
 
@@ -67,6 +68,8 @@ In Strip view, click the pin-shaped taskbar button, then drag the Strip to any f
 **Claude:** if Claude Code is not detected, install it, run `claude` once in a terminal, and complete sign-in. The CLI does not need to remain open.
 
 **Antigravity:** sign in to Antigravity IDE once and keep it open while you want live numbers. The deck reads the IDE's local language server on `127.0.0.1`; while the IDE is closed the last reading stays visible as `cached` for up to 24 hours, then the card asks you to open the IDE.
+
+**Grok Bot:** install the [Grok Bot desktop app](https://docs.x.ai/grok-bot/get-started) and sign in once. Its weekly allowance is separate from Grok/SuperGrok usage. The deck reuses only Grok Bot's short-lived access token and asks you to reopen the app when that token expires.
 
 ---
 
@@ -85,7 +88,7 @@ Widget and Strip remember separate positions. Open the dashboard or hide either 
 
 > This setup is more involved. It requires Chromium Developer mode, a manually loaded unpacked extension, and a signed-in Gemini or Grok tab.
 
-Gemini and Grok usage is read from a browser tab through the bundled **AI Quota Deck Browser Bridge**. Skip this section if you only use Claude Code, Codex, and Antigravity.
+Gemini and Grok usage is read from a browser tab through the bundled **AI Quota Deck Browser Bridge**. Skip this section if you only use Claude Code, Codex, Antigravity, or Grok Bot.
 
 - Gemini requires the bridge.
 - Grok prefers the bridge but can fall back to a signed-in Grok Build CLI.
@@ -138,6 +141,8 @@ If you only need to check Gemini or Grok usage without running the desktop app, 
 
 **Antigravity asks you to open the IDE:** the deck can only read Antigravity while the IDE is running. Start it and allow one refresh cycle.
 
+**Grok Bot asks you to sign in again:** open Grok Bot once. The deck never refreshes the account itself; it will pick up the renewed short-lived access token on the next check.
+
 **Windows reports an unknown publisher:** current releases are not code-signed. Download them only from this project's GitHub Releases page.
 
 ---
@@ -149,6 +154,7 @@ AI Quota Deck has no telemetry and uploads nothing.
 - It uses sign-ins already stored by the supported desktop or CLI clients.
 - It never reads or uses provider refresh tokens. After a Claude `401`, it runs the official `claude update` command in the background and rereads Claude Code's access token; this command may also update Claude Code itself.
 - Antigravity is read from the IDE's local language server on `127.0.0.1` only. The deck never reads, stores, or refreshes a Google sign-in.
+- Grok Bot's Chromium-encrypted local access token is unlocked with Windows DPAPI only for the live usage request. Its refresh token is never deserialized, decrypted, used, cached, or sent anywhere by the deck.
 - The bridge can read only `gemini.google.com` and `grok.com`.
 - Only quota values, reset times, provider/account slots, and observation times reach the app. Cookies and page tokens stay in the browser.
 

@@ -1,6 +1,6 @@
 # 📊 AI Quota Deck
 
-集中查看 Claude Code、Codex、Antigravity、Gemini 與 Grok 使用額度的 Windows 系統匣工具。
+集中查看 Claude Code、Codex、Antigravity、Gemini、Grok 與 Grok Bot 使用額度的 Windows 系統匣工具。
 
 📘 [English](./README.md)
 
@@ -36,6 +36,7 @@ Dashboard 會顯示重置時間、使用速度、方案與快取狀態；Widget 
 | **Antigravity** | Gemini 池與 Claude + GPT 池各自的每週與 5 小時額度 | 保持 Antigravity IDE 開啟 |
 | **Gemini** | 5 小時、每週 | [進階 Browser Bridge 設定](#進階gemini-與-grok) |
 | **Grok** | 每週與各產品細目；免費帳號則顯示查詢額度 | Browser Bridge，或 Grok Build 備援 |
+| **Grok Bot** | 獨立計算的每週額度 | 登入 Grok Bot 桌面 App |
 
 未設定的服務會自動隱藏；各家獨立更新，單一服務發生問題不會拖累其他卡片。
 
@@ -58,7 +59,7 @@ Dashboard 會顯示重置時間、使用速度、方案與快取狀態；Widget 
 
 **系統需求：Windows 10 或 11。**
 
-1. [點此下載最新安裝檔](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.3.0_x64-setup.exe)。
+1. [點此下載最新安裝檔](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.3.1_x64-setup.exe)。
 2. 執行安裝檔，再啟動 **AI Quota Deck**。
 3. 關閉視窗會回到系統匣；左鍵點擊系統匣圖示即可重新開啟。
 
@@ -67,6 +68,8 @@ Dashboard 會顯示重置時間、使用速度、方案與快取狀態；Widget 
 **Claude：** 若沒有偵測到 Claude Code，請先安裝它，在終端機執行一次 `claude` 並完成登入；之後不必讓 CLI 持續執行。
 
 **Antigravity：** 在 Antigravity IDE 登入一次，想看即時數字時保持 IDE 開啟。App 只讀取 IDE 在 `127.0.0.1` 的本機 language server；IDE 關閉時會保留最後一次結果並標示 `cached`，最多 24 小時，之後卡片會提示開啟 IDE。
+
+**Grok Bot：** 安裝 [Grok Bot 桌面 App](https://docs.x.ai/grok-bot/get-started) 並登入一次。它的每週額度與 Grok／SuperGrok 分開計算；App 只重用 Grok Bot 的短效 access token，token 過期時會提示重新開啟 Grok Bot。
 
 ---
 
@@ -85,7 +88,7 @@ Widget 與 Strip 會各自記住位置。兩種畫面都可從自身按鈕或系
 
 > 這段設定比較麻煩，需要開啟 Chromium 開發人員模式、手動載入未封裝擴充功能，並保留已登入的 Gemini 或 Grok 分頁。
 
-Gemini 與 Grok 必須透過隨附的 **AI Quota Deck Browser Bridge** 從瀏覽器讀取用量。若只使用 Claude Code、Codex 與 Antigravity，可以跳過本節。
+Gemini 與 Grok 必須透過隨附的 **AI Quota Deck Browser Bridge** 從瀏覽器讀取用量。若只使用 Claude Code、Codex、Antigravity 或 Grok Bot，可以跳過本節。
 
 - Gemini 必須安裝 Bridge。
 - Grok 優先使用 Bridge，也可退回讀取已登入的 Grok Build CLI。
@@ -138,6 +141,8 @@ Gemini 與 Grok 必須透過隨附的 **AI Quota Deck Browser Bridge** 從瀏覽
 
 **Antigravity 提示開啟 IDE：** App 只能在 Antigravity IDE 執行中讀取額度。開啟 IDE 後等待一個更新週期即可。
 
+**Grok Bot 提示重新登入：** 開啟一次 Grok Bot。AI Quota Deck 不會自行更新帳號憑證，下一次檢查時會自動讀到 Grok Bot 更新後的短效 access token。
+
 **Windows 顯示未知發行者：** 目前版本尚未加入程式碼簽章，請只從本專案的 GitHub Releases 頁面下載。
 
 ---
@@ -149,6 +154,7 @@ AI Quota Deck 沒有遙測，也不會上傳資料。
 - 使用支援的桌面 App 或 CLI 已儲存的登入資料。
 - 不會讀取或使用各服務的 refresh token。Claude 回傳 `401` 時，只會在背景執行官方 `claude update` 並重讀 access token；此指令也可能同時更新 Claude Code。
 - Antigravity 只從 IDE 在 `127.0.0.1` 的本機 language server 讀取；不會讀取、儲存或更新任何 Google 登入。
+- Grok Bot 的短效 access token 只會在本機透過 Windows DPAPI 解開並用於即時額度請求；AI Quota Deck 不會解析、解密、使用、快取或傳送它的 refresh token。
 - Bridge 只能讀取 `gemini.google.com` 與 `grok.com`。
 - 只有額度、重置時間、服務／帳號代號與觀測時間會傳到 App；Cookie 與頁面 token 留在瀏覽器中。
 

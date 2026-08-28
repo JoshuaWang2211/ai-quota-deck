@@ -408,6 +408,7 @@ body {
 [data-source="antigravity"] { --source-color: #7c67e8; }
 [data-source="gemini"] { --source-color: #4285f4; }
 [data-source="grok"] { --source-color: #536471; }
+[data-source="grok_bot"] { --source-color: #e94b8a; }
 
 .sources-trigger-copy {
   display: flex;

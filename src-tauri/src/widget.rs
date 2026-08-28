@@ -18,7 +18,9 @@ const DEFAULT_WIDGET_HEIGHT: f64 = 164.0;
 const MIN_WIDGET_WIDTH: f64 = 200.0;
 const MAX_WIDGET_WIDTH: f64 = 360.0;
 const MIN_WIDGET_HEIGHT: f64 = 72.0;
-const MAX_WIDGET_HEIGHT: f64 = 260.0;
+// Six configured providers plus the header need about 300 px. This is only a
+// clamp; the companion still shrinks to its measured content when fewer are on.
+const MAX_WIDGET_HEIGHT: f64 = 360.0;
 const DEFAULT_STRIP_WIDTH: f64 = 560.0;
 const MIN_STRIP_WIDTH: f64 = 300.0;
 const MAX_STRIP_WIDTH: f64 = 900.0;

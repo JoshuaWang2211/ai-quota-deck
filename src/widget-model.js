@@ -4,6 +4,7 @@ export const WIDGET_PROVIDERS = [
   { id: "antigravity", name: "Antigravity", stripName: "AG" },
   { id: "gemini", name: "Gemini", stripName: "GE" },
   { id: "grok", name: "Grok", stripName: "GR" },
+  { id: "grok_bot", name: "Grok Bot", stripName: "GB" },
 ];
 
 export function compactProviderName(provider, strip) {
@@ -35,10 +36,12 @@ export function compactWindowLabel(window_) {
   return window_.label.length > 8 ? `${window_.label.slice(0, 7)}…` : window_.label;
 }
 
-// Grok shows its single seven-day pool; Antigravity shows the weekly bucket of
-// each of its two pools. The five-hour buckets stay on the dashboard.
+// Grok shows its single seven-day pool; Grok Bot already reports one weekly
+// pool. Antigravity shows the weekly bucket of each of its two pools. The
+// five-hour buckets stay on the dashboard.
 export function widgetWindows(providerId, windows = []) {
   if (providerId === "grok") return windows.filter(isSevenDayWindow).slice(0, 1);
+  if (providerId === "grok_bot") return windows.filter(isSevenDayWindow).slice(0, 1);
   if (providerId === "antigravity") return windows.filter(isSevenDayWindow);
   return windows;
 }

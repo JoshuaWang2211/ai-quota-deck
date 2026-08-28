@@ -6,6 +6,7 @@ mod claude_rate_limit;
 mod codex;
 mod gemini;
 mod grok;
+mod grok_bot;
 mod native_host;
 mod quota;
 mod startup;
@@ -56,6 +57,11 @@ async fn codex_quota() -> ProviderQuota {
 #[tauri::command]
 async fn grok_quota() -> ProviderQuota {
     grok::fetch().await
+}
+
+#[tauri::command]
+async fn grok_bot_quota() -> ProviderQuota {
+    grok_bot::fetch().await
 }
 
 #[tauri::command]
@@ -456,6 +462,7 @@ pub fn run() {
             codex_quota,
             gemini_quota,
             grok_quota,
+            grok_bot_quota,
             antigravity_quota,
             system_activity,
             bridge_dir,
