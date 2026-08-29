@@ -110,8 +110,8 @@ setImmediate(() => {
   ]);
   assert.equal(refreshedTabs.length, 5,
     'worker start, browser startup, toolbar click, alarm, and active should refresh loaded tabs');
-  assert.deepEqual(reloadedTabs, [9, 11, 9, 11, 9, 11, 9, 11, 9, 11],
-    'discarded and frozen tabs should be revived on every recovery trigger');
+  assert.deepEqual(reloadedTabs, [9, 9, 9, 9, 9],
+    'discarded tabs should be revived but frozen tabs must retain page state');
   assert.deepEqual(updatedTabs.slice(0, 3), [
     [7, { autoDiscardable: false }],
     [9, { autoDiscardable: false }],

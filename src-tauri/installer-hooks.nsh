@@ -12,6 +12,10 @@
 !macro NSIS_HOOK_PREUNINSTALL
   Delete "$DESKTOP\${DECK_OLD_SHORTCUT_NAME}.lnk"
   Delete "$SMPROGRAMS\${DECK_OLD_SHORTCUT_NAME}.lnk"
-  Delete "$DESKTOP\${DECK_SHORTCUT_NAME}.lnk"
-  Delete "$SMPROGRAMS\${DECK_SHORTCUT_NAME}.lnk"
+  ; Tauri's /UPDATE flow preserves current shortcuts and the new installer does
+  ; not recreate them. Only a real uninstall should remove the current names.
+  ${If} $UpdateMode <> 1
+    Delete "$DESKTOP\${DECK_SHORTCUT_NAME}.lnk"
+    Delete "$SMPROGRAMS\${DECK_SHORTCUT_NAME}.lnk"
+  ${EndIf}
 !macroend

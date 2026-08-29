@@ -16,6 +16,7 @@
   let atToken = '';
   let lastTokenRefreshRequest = 0;
   let pollStarted = false;
+  let failedToken = null;
 
   function pushQuota(data, observedAtMs) {
     chrome.runtime.sendMessage({
@@ -53,6 +54,7 @@
       }
     }
 
+    let data;
     try {
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -63,15 +65,22 @@
         }).toString()
       });
       if (!response.ok) throw new Error(`Gemini quota returned ${response.status}`);
-      const data = AiQuotaDeckGeminiParser.parseLimits(await response.text());
+      data = AiQuotaDeckGeminiParser.parseLimits(await response.text());
       if (!data) throw new Error('Gemini quota response did not contain both windows');
-
-      const fetchedAt = Date.now();
-      await chrome.storage.local.set({ [dataKey]: data, [fetchTimeKey]: fetchedAt });
-      pushQuota(data, fetchedAt);
     } catch (error) {
+      failedToken = atToken;
       requestFreshToken();
+      return;
     }
+
+    failedToken = null;
+    const fetchedAt = Date.now();
+    try {
+      await chrome.storage.local.set({ [dataKey]: data, [fetchTimeKey]: fetchedAt });
+    } catch (error) {
+      // The native host still gets the live reading; storage is only a browser cache.
+    }
+    pushQuota(data, fetchedAt);
   }
 
   window.addEventListener('message', (event) => {
@@ -80,6 +89,9 @@
     if (!pollStarted) {
       pollStarted = true;
       void fetchAndPush();
+    } else if (failedToken && failedToken !== atToken) {
+      failedToken = null;
+      void fetchAndPush(true);
     }
   });
 

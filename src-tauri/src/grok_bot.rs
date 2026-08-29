@@ -67,10 +67,10 @@ struct UsageStatus {
     current_period_start: Option<i64>,
     next_reset: Option<i64>,
     usage_percent: Option<f64>,
-    included_limit_zero: bool,
-    uses_pooled_enterprise_allowance: bool,
-    has_available_usage: bool,
-    has_non_zero_included_limit: bool,
+    included_limit_zero: Option<bool>,
+    uses_pooled_enterprise_allowance: Option<bool>,
+    has_available_usage: Option<bool>,
+    has_non_zero_included_limit: Option<bool>,
     included_plan: Option<String>,
     plan_label: Option<String>,
 }
@@ -321,12 +321,15 @@ fn parse_usage_status(bytes: &[u8]) -> Result<UsageStatus, String> {
                 result.usage_percent = Some(f64::from_le_bytes(raw));
                 cursor += 8;
             }
-            (4, 0) => result.included_limit_zero = read_varint(bytes, &mut cursor)? != 0,
+            (4, 0) => result.included_limit_zero = Some(read_varint(bytes, &mut cursor)? != 0),
             (6, 0) => {
-                result.uses_pooled_enterprise_allowance = read_varint(bytes, &mut cursor)? != 0
+                result.uses_pooled_enterprise_allowance =
+                    Some(read_varint(bytes, &mut cursor)? != 0)
             }
-            (7, 0) => result.has_available_usage = read_varint(bytes, &mut cursor)? != 0,
-            (8, 0) => result.has_non_zero_included_limit = read_varint(bytes, &mut cursor)? != 0,
+            (7, 0) => result.has_available_usage = Some(read_varint(bytes, &mut cursor)? != 0),
+            (8, 0) => {
+                result.has_non_zero_included_limit = Some(read_varint(bytes, &mut cursor)? != 0)
+            }
             (14, 2) => result.included_plan = optional_text(length_delimited(bytes, &mut cursor)?),
             (15, 2) => result.plan_label = optional_text(length_delimited(bytes, &mut cursor)?),
             _ => skip_field(bytes, &mut cursor, wire)?,
@@ -351,13 +354,15 @@ fn humanize_plan(value: &str) -> String {
 }
 
 fn quota_from(status: UsageStatus) -> ProviderQuota {
-    if status.uses_pooled_enterprise_allowance {
+    if status.uses_pooled_enterprise_allowance == Some(true) {
         return ProviderQuota::unavailable(
             PROVIDER,
             "Grok Bot uses a pooled enterprise allowance that does not report an individual percentage.",
         );
     }
-    if status.included_limit_zero || !status.has_non_zero_included_limit {
+    if status.included_limit_zero == Some(true)
+        || (status.has_non_zero_included_limit == Some(false) && status.usage_percent.is_none())
+    {
         return ProviderQuota::unavailable(
             PROVIDER,
             "Signed in to Grok Bot, but this account reports no included usage limit.",
@@ -635,7 +640,7 @@ mod tests {
         assert_eq!(parsed.next_reset, Some(1_788_104_800));
         assert_eq!(parsed.usage_percent, Some(5.933123));
         assert_eq!(parsed.plan_label.as_deref(), Some("SuperGrok"));
-        assert!(parsed.has_non_zero_included_limit);
+        assert_eq!(parsed.has_non_zero_included_limit, Some(true));
 
         let ProviderQuota::Ok {
             provider,
@@ -671,6 +676,17 @@ mod tests {
             cached_quota_from_raw(&raw, 1_000 + SNAPSHOT_MAX_AGE_SECONDS + 1, "offline").is_none()
         );
         assert!(cached_quota_from_raw(&raw, 200_000, "offline").is_none());
+    }
+
+    #[test]
+    fn percentage_is_usable_when_the_advisory_nonzero_flag_is_absent() {
+        let status = UsageStatus {
+            usage_percent: Some(0.0),
+            next_reset: Some(2_000),
+            current_period_start: Some(1_000),
+            ..UsageStatus::default()
+        };
+        assert!(matches!(quota_from(status), ProviderQuota::Ok { .. }));
     }
 
     #[test]

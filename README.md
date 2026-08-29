@@ -59,7 +59,7 @@ In Strip view, click the pin-shaped taskbar button, then drag the Strip to any f
 
 **Requires Windows 10 or 11.**
 
-1. [Download the latest installer](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.3.1_x64-setup.exe).
+1. [Download the latest installer](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.3.2_x64-setup.exe).
 2. Run it, then launch **AI Quota Deck**.
 3. Close the window to return it to the system tray; left-click the tray icon to reopen it.
 

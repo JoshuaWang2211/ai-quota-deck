@@ -59,14 +59,16 @@ function refreshProviderTab(tab) {
 
   // These tabs are the bridge's data source. Letting Memory Saver discard them
   // silently stops monitoring, so opt only these two origins out. A tab that
-  // was already frozen or discarded must be reloaded before its content script
-  // can receive another refresh message.
+  // was already discarded has lost its renderer and must be reloaded. A frozen
+  // renderer still owns preserved page state (including unsent drafts), so never
+  // reload it behind the user's back; visibilitychange refreshes it on return.
   chrome.tabs.update(tab.id, { autoDiscardable: false }, () => {
     void chrome.runtime.lastError;
-    if (tab.discarded || tab.frozen) {
+    if (tab.discarded) {
       chrome.tabs.reload(tab.id, () => void chrome.runtime.lastError);
       return;
     }
+    if (tab.frozen) return;
     chrome.tabs.sendMessage(tab.id, { type: REFRESH_MESSAGE }, () => {
       void chrome.runtime.lastError;
     });

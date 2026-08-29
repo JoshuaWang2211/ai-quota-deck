@@ -4,6 +4,8 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
@@ -20,9 +22,10 @@ const USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
 /// so a machine with a long history could have many useless files. Give up
 /// rather than walk an unbounded archive.
 const MAX_SESSION_FILES_SCANNED: usize = 20;
+const SESSION_SCAN_TTL: Duration = Duration::from_secs(5 * 60);
+static SESSION_FALLBACK_CACHE: Mutex<Option<(Instant, Option<ProviderQuota>)>> = Mutex::new(None);
 
-/// The dashboard waits on every provider before it repaints, so a request that
-/// never answers would freeze the whole refresh cycle, not just this card.
+/// Bound this card even though the dashboard paints providers progressively.
 const REQUEST_TIMEOUT_SECONDS: u64 = 10;
 
 fn usage_client() -> Result<reqwest::Client, String> {
@@ -65,10 +68,11 @@ struct Tokens {
 struct UsageResponse {
     #[serde(default)]
     plan_type: Option<String>,
+    #[serde(default)]
     rate_limit: RateLimit,
 }
 
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 struct RateLimit {
     #[serde(default)]
     primary_window: Option<LiveWindow>,
@@ -138,15 +142,38 @@ pub async fn fetch() -> ProviderQuota {
 
     match live().await {
         Ok(quota) => quota,
-        Err(reason) => match from_session_logs(&reason) {
-            Some(quota) => quota,
-            None if auth_missing => ProviderQuota::not_configured(
-                PROVIDER,
-                "Open the Codex app and sign in to add Codex.",
-            ),
-            None => ProviderQuota::error(PROVIDER, reason),
-        },
+        Err(reason) => {
+            let fallback_reason = reason.clone();
+            let fallback = tauri::async_runtime::spawn_blocking(move || {
+                cached_session_fallback(&fallback_reason)
+            })
+            .await
+            .unwrap_or(None);
+            match fallback {
+                Some(quota) => quota,
+                None if auth_missing => ProviderQuota::not_configured(
+                    PROVIDER,
+                    "Open the Codex app and sign in to add Codex.",
+                ),
+                None => ProviderQuota::error(PROVIDER, reason),
+            }
+        }
     }
+}
+
+fn cached_session_fallback(reason: &str) -> Option<ProviderQuota> {
+    if let Ok(guard) = SESSION_FALLBACK_CACHE.lock() {
+        if let Some((at, quota)) = guard.as_ref() {
+            if at.elapsed() <= SESSION_SCAN_TTL {
+                return quota.clone();
+            }
+        }
+    }
+    let quota = from_session_logs(reason);
+    if let Ok(mut guard) = SESSION_FALLBACK_CACHE.lock() {
+        *guard = Some((Instant::now(), quota.clone()));
+    }
+    quota
 }
 
 async fn live() -> Result<ProviderQuota, String> {
@@ -390,6 +417,12 @@ mod tests {
             "some_field_added_next_quarter":{"nested":true}}}"#;
         let body: UsageResponse = serde_json::from_str(raw).expect("a parseable usage response");
         assert_eq!(windows_from(&body.rate_limit).len(), 1);
+    }
+
+    #[test]
+    fn an_omitted_rate_limit_is_an_empty_successful_shape() {
+        let body: UsageResponse = serde_json::from_str(r#"{"plan_type":"plus"}"#).unwrap();
+        assert!(windows_from(&body.rate_limit).is_empty());
     }
 
     #[test]

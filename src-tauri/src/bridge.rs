@@ -69,26 +69,72 @@ fn sync(source: &Path, target: &Path, version: &str) -> Result<(), String> {
     // staging directory itself, so the installer has already put the files in
     // place and each copy would be a file onto itself — Windows answers that
     // with a sharing violation. Only the stamp is still ours to write.
-    if !is_same_dir(source, target) {
+    if is_same_dir(source, target) {
+        return fs::write(target.join(STAMP), version)
+            .map_err(|error| format!("cannot stamp {}: {error}", target.display()));
+    }
+
+    stage_and_swap(source, target, version)
+}
+
+fn stage_and_swap(source: &Path, target: &Path, version: &str) -> Result<(), String> {
+    let parent = target
+        .parent()
+        .ok_or_else(|| format!("{} has no parent directory", target.display()))?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
+    let staging = target.with_extension(format!("stage-{}", std::process::id()));
+    let backup = target.with_extension(format!("old-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&staging);
+    let _ = fs::remove_dir_all(&backup);
+
+    let staged = (|| {
         for name in FILES {
             let from = source.join(name);
-            let to = target.join(name);
+            let to = staging.join(name);
             if let Some(parent) = to.parent() {
                 fs::create_dir_all(parent)
                     .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
             }
             fs::copy(&from, &to).map_err(|error| {
                 format!(
-                    "cannot copy {} to {}: {error}",
+                    "cannot stage {} as {}: {error}",
                     from.display(),
                     to.display()
                 )
             })?;
         }
+        fs::write(staging.join(STAMP), version)
+            .map_err(|error| format!("cannot stamp {}: {error}", staging.display()))
+    })();
+    if let Err(error) = staged {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(error);
     }
 
-    fs::write(target.join(STAMP), version)
-        .map_err(|error| format!("cannot stamp {}: {error}", target.display()))
+    if target.exists() {
+        if let Err(error) = fs::rename(target, &backup) {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(format!("cannot set aside {}: {error}", target.display()));
+        }
+    }
+    if let Err(error) = fs::rename(&staging, target) {
+        let restored = if backup.exists() {
+            fs::rename(&backup, target)
+        } else {
+            Ok(())
+        };
+        let _ = fs::remove_dir_all(&staging);
+        return match restored {
+            Ok(()) => Err(format!("cannot activate {}: {error}", target.display())),
+            Err(restore_error) => Err(format!(
+                "cannot activate {} ({error}) or restore it ({restore_error})",
+                target.display()
+            )),
+        };
+    }
+    let _ = fs::remove_dir_all(&backup);
+    Ok(())
 }
 
 /// Compared after canonicalising, so an install root reached by a different but
@@ -215,6 +261,25 @@ mod tests {
         sync(&source, &target, "0.1.0").unwrap();
 
         assert!(target.join("manifest.json").is_file());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_failed_stage_leaves_the_installed_bridge_whole() {
+        let root = temp("failed-stage");
+        let (source, target) = (root.join("src"), root.join("dst"));
+        seed(&source);
+        sync(&source, &target, "0.1.0").unwrap();
+        fs::write(source.join("manifest.json"), "// new manifest").unwrap();
+        fs::remove_file(source.join("src/grok.js")).unwrap();
+
+        assert!(sync(&source, &target, "0.2.0").is_err());
+        assert_eq!(
+            fs::read_to_string(target.join("manifest.json")).unwrap(),
+            "// manifest.json"
+        );
+        assert_eq!(fs::read_to_string(target.join(STAMP)).unwrap(), "0.1.0");
+        assert!(target.join("src/grok.js").is_file());
         fs::remove_dir_all(&root).unwrap();
     }
 }

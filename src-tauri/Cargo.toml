@@ -1,6 +1,6 @@
 [package]
 name = "ai-quota-deck"
-version = "0.3.1"
+version = "0.3.2"
 description = "Windows tray dashboard for Claude, Codex, Antigravity, Gemini, Grok, and Grok Bot subscription quota."
 authors = ["Joshua Wang"]
 license = "MIT"

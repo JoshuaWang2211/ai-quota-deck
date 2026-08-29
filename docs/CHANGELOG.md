@@ -4,6 +4,20 @@ All notable changes to AI Quota Deck are documented here.
 
 ---
 
+## v0.3.2 - 2026-08-29
+
+- Fixed paid Grok accounts being shown as Free when an anonymous browser snapshot coexisted with an expired or unreachable Grok Build credential.
+- Made Claude's quota snapshot and persisted rate-limit circuit breaker atomic. Signing out now keeps a recent cached quota visible, then asks for sign-in after that snapshot expires instead of silently hiding Claude.
+- Dashboard and companion views now update each provider as soon as it finishes. A slow Claude credential recovery no longer holds back the other cards, and failed checks no longer reset the misleading global “Last updated” age.
+- Browser Bridge no longer reloads frozen Gemini or Grok tabs, protecting unsent drafts. Gemini retries immediately when the page supplies a replacement token, and both browser providers still forward live quota when Chrome storage is unavailable.
+- Widget and Strip now fall back to Grok's actual Free, Daily, or Monthly windows when no weekly window exists, and use provider-supplied severity consistently with Dashboard.
+- Hardened Grok Bot protobuf compatibility when advisory boolean fields are absent while a valid usage percentage is present.
+- Moved Codex session-log fallback scanning off the async runtime and memoized it for five minutes. Missing future `rate_limit` objects now become a clean unavailable state rather than a parse error.
+- Browser Bridge upgrades stage a complete directory before swapping it into place, Widget drag activity extends past 30 seconds, Antigravity plan labels are scoped to the current IDE session, and NSIS update mode preserves current shortcuts.
+- Version bumped to 0.3.2 across the app, installer, dashboard footer, and Browser Bridge.
+
+---
+
 ## v0.3.1 - 2026-08-28
 
 - Added Grok Bot as a sixth, independent provider. It displays the weekly allowance reported by the signed-in Grok Bot desktop app, separately from Grok/SuperGrok usage.

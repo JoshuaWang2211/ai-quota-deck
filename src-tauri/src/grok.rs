@@ -163,6 +163,13 @@ fn newest_credential(entries: HashMap<String, AuthEntry>, current_time: i64) -> 
         .map(|(_, entry)| entry)
 }
 
+fn paid_credential_quota(result: Result<ProviderQuota, String>) -> ProviderQuota {
+    match result {
+        Ok(quota) => quota,
+        Err(message) => ProviderQuota::error(PROVIDER, message),
+    }
+}
+
 pub async fn fetch() -> ProviderQuota {
     if let Some(quota) = browser_quota(BROWSER_CACHE_MAX_AGE_SECONDS, None) {
         // Grok Build is sold only to paid accounts, so a credential on disk is
@@ -172,10 +179,10 @@ pub async fn fetch() -> ProviderQuota {
         if !(browser_cache_is_free_only() && credential_exists()) {
             return quota;
         }
-        if let Ok(cli @ ProviderQuota::Ok { .. }) = try_fetch().await {
-            return cli;
-        }
-        return quota;
+        // A Grok Build credential proves this is a paid account. Its status
+        // must win even when it needs attention; showing anonymous browser
+        // counts as "Free" would be a confident account mix-up.
+        return paid_credential_quota(try_fetch().await);
     }
 
     let browser_configured = native_host::cache_exists(PROVIDER).unwrap_or(false);
@@ -444,6 +451,24 @@ mod tests {
         // A period xAI adds later should look odd, not be mislabelled.
         assert_eq!(period_label("USAGE_PERIOD_TYPE_FORTNIGHTLY"), "Fortnightly");
         assert_eq!(period_label("SOMETHING_ELSE"), "Something_else");
+    }
+
+    #[test]
+    fn paid_credential_attention_is_never_relabelled_as_free() {
+        assert!(matches!(
+            paid_credential_quota(Ok(expired_token())),
+            ProviderQuota::ActionRequired {
+                provider: "grok",
+                ..
+            }
+        ));
+        assert!(matches!(
+            paid_credential_quota(Err("offline".to_string())),
+            ProviderQuota::Error {
+                provider: "grok",
+                ..
+            }
+        ));
     }
 
     #[test]

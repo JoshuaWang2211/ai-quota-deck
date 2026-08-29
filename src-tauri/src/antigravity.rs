@@ -6,6 +6,7 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
+use std::{collections::hash_map::DefaultHasher, hash::Hash, hash::Hasher};
 
 use serde::{Deserialize, Serialize};
 
@@ -44,6 +45,7 @@ static PLAN_CACHE: Mutex<Option<CachedPlan>> = Mutex::new(None);
 struct CachedPlan {
     plan: Option<String>,
     at: i64,
+    session: u64,
 }
 
 /// One running language server. `csrf` is the credential: it stays in memory,
@@ -494,21 +496,28 @@ async fn fetch_plan(client: &reqwest::Client, port: u16, csrf: &str) -> Option<S
     plan_from(&status)
 }
 
+fn session_fingerprint(csrf: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    csrf.hash(&mut hasher);
+    hasher.finish()
+}
+
 async fn plan(client: &reqwest::Client, port: u16, csrf: &str) -> Option<String> {
+    let session = session_fingerprint(csrf);
     // Read and release the lock before any await — a MutexGuard must not be
     // held across one.
     let cached = PLAN_CACHE
         .lock()
         .ok()
-        .and_then(|guard| guard.as_ref().map(|c| (c.plan.clone(), c.at)));
+        .and_then(|guard| guard.as_ref().map(|c| (c.plan.clone(), c.at, c.session)));
 
-    if let Some((plan, at)) = cached {
+    if let Some((plan, at, cached_session)) = cached {
         let ttl = if plan.is_some() {
             PLAN_TTL_SECONDS
         } else {
             PLAN_RETRY_SECONDS
         };
-        if now() - at < ttl {
+        if cached_session == session && now() - at < ttl {
             return plan;
         }
     }
@@ -518,6 +527,7 @@ async fn plan(client: &reqwest::Client, port: u16, csrf: &str) -> Option<String>
         *guard = Some(CachedPlan {
             plan: fetched.clone(),
             at: now(),
+            session,
         });
     }
     fetched
@@ -721,19 +731,23 @@ async fn try_fetch() -> ProviderQuota {
         Err(message) => return fallback(&message),
     };
     let mut last_failure = None;
+    let mut unsupported = false;
     for candidate in &candidates {
         for &port in candidate.ports.iter().take(MAX_PORTS_PER_PROCESS) {
             match summary(&client, port, &candidate.csrf).await {
                 Ok(summary) => return live_quota(&client, port, &candidate.csrf, &summary).await,
                 Err(Failure::Unsupported) => {
-                    return ProviderQuota::action_required(
-                        PROVIDER,
-                        "This version of AI Quota Deck needs a newer Antigravity IDE to read its quota summary.",
-                    );
+                    unsupported = true;
                 }
                 Err(failure) => last_failure = Some(failure),
             }
         }
+    }
+    if unsupported {
+        return ProviderQuota::action_required(
+            PROVIDER,
+            "This version of AI Quota Deck needs a newer Antigravity IDE to read its quota summary.",
+        );
     }
     let reason = last_failure.map_or_else(
         || "the Antigravity language server is not listening on any port".to_string(),
@@ -1069,6 +1083,15 @@ mod tests {
         assert_eq!(plan_from(&parse(blank_tier)).as_deref(), Some("Pro"));
         assert_eq!(plan_from(&parse(neither)), None);
         assert_eq!(plan_from(&parse("{}")), None);
+    }
+
+    #[test]
+    fn plan_cache_session_fingerprint_changes_with_the_signed_in_session() {
+        assert_eq!(session_fingerprint(CSRF), session_fingerprint(CSRF));
+        assert_ne!(
+            session_fingerprint(CSRF),
+            session_fingerprint("another-session-token")
+        );
     }
 
     #[test]

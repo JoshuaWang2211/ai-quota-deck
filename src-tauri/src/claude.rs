@@ -15,7 +15,9 @@ use crate::claude_rate_limit::{
     self, clear_rate_limit, mark_attempt, rate_limit_remaining, record_rate_limit,
     request_floor_remaining,
 };
-use crate::quota::{http_failure, now, rfc3339_to_unix, ProviderQuota, QuotaWindow, Stale};
+use crate::quota::{
+    atomic_write, http_failure, now, rfc3339_to_unix, ProviderQuota, QuotaWindow, Stale,
+};
 
 const PROVIDER: &str = "claude";
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
@@ -424,8 +426,7 @@ fn write_cached_usage(plan: &Option<String>, windows: &[QuotaWindow]) -> Result<
     };
     let bytes = serde_json::to_vec(&snapshot)
         .map_err(|error| format!("cannot serialize Claude cache: {error}"))?;
-    std::fs::write(&path, bytes)
-        .map_err(|error| format!("cannot write {}: {error}", path.display()))
+    atomic_write(&path, &bytes)
 }
 
 fn cached_quota_from_raw(raw: &str, current_time: i64, reason: &str) -> Option<ProviderQuota> {
@@ -459,6 +460,16 @@ fn cached_quota_from_raw(raw: &str, current_time: i64, reason: &str) -> Option<P
 fn cached_quota(reason: &str) -> Option<ProviderQuota> {
     let raw = std::fs::read_to_string(usage_cache_path()?).ok()?;
     cached_quota_from_raw(&raw, now(), reason)
+}
+
+fn signed_out_quota(cached: Option<ProviderQuota>, cache_exists: bool) -> ProviderQuota {
+    cached.unwrap_or_else(|| {
+        if cache_exists {
+            ProviderQuota::action_required(PROVIDER, "Open Claude Code and sign in again.")
+        } else {
+            ProviderQuota::not_configured(PROVIDER, "Run Claude Code and sign in to add Claude.")
+        }
+    })
 }
 
 /// An unrecognised `kind` is passed through rather than dropped, so a new bucket
@@ -580,10 +591,10 @@ pub async fn fetch() -> ProviderQuota {
         return ProviderQuota::error(PROVIDER, "could not locate the home directory");
     };
     if matches!(path.try_exists(), Ok(false)) {
-        return ProviderQuota::not_configured(
-            PROVIDER,
-            "Run Claude Code and sign in to add Claude.",
-        );
+        let reason = "Claude Code's local sign-in is missing.";
+        let cache_exists =
+            usage_cache_path().is_some_and(|path| matches!(path.try_exists(), Ok(true)));
+        return signed_out_quota(cached_quota(reason), cache_exists);
     }
 
     // Keep the authoritative gate in Rust. A WebView reload, a second caller,
@@ -788,6 +799,38 @@ mod tests {
         assert_eq!(window_seconds("weekly_all"), Some(7 * 24 * 60 * 60));
         assert_eq!(window_seconds("weekly_scoped"), Some(7 * 24 * 60 * 60));
         assert_eq!(window_seconds("new_kind"), None);
+    }
+
+    #[test]
+    fn signing_out_keeps_a_recent_snapshot_visible() {
+        let cached = ProviderQuota::ok_stale(
+            PROVIDER,
+            Some("Max 5x".to_string()),
+            vec![QuotaWindow {
+                label: "Weekly".to_string(),
+                percent: 25.0,
+                resets_at: Some(9_999),
+                window_seconds: Some(604_800),
+                severity: None,
+            }],
+            Stale {
+                source: "last successful Claude check".to_string(),
+                observed_at: Some(1_000),
+                reason: "signed out".to_string(),
+            },
+        );
+        assert!(matches!(
+            signed_out_quota(Some(cached), true),
+            ProviderQuota::Ok { stale: Some(_), .. }
+        ));
+        assert!(matches!(
+            signed_out_quota(None, true),
+            ProviderQuota::ActionRequired { .. }
+        ));
+        assert!(matches!(
+            signed_out_quota(None, false),
+            ProviderQuota::NotConfigured { .. }
+        ));
     }
 
     #[test]

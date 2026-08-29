@@ -5,9 +5,11 @@ import {
   enabledProviders,
   isUserAway,
   missedRefreshCycle,
+  providerObservationMs,
   providerRequestFloor,
   providerRetryDelay,
   resumeGraceDeadline,
+  settleProviders,
 } from "../src/polling.js";
 import {
   compactProviderName,
@@ -83,7 +85,7 @@ test("widget labels quota windows by duration rather than slot", () => {
   assert.equal(compactWindowLabel({ label: "Monthly", window_seconds: 2_592_000 }), "30d");
 });
 
-test("widget shows only Grok's seven-day pool", () => {
+test("widget prefers Grok's seven-day pool and falls back to real windows", () => {
   const windows = [
     { label: "Daily", window_seconds: 86_400 },
     { label: "Weekly", window_seconds: 604_800 },
@@ -91,6 +93,12 @@ test("widget shows only Grok's seven-day pool", () => {
   assert.deepEqual(widgetWindows("grok", windows), [windows[1]]);
   assert.deepEqual(widgetWindows("grok_bot", windows), [windows[1]]);
   assert.deepEqual(widgetWindows("gemini", windows), windows);
+  const free = [
+    { label: "Fast · 2 / 2 left", window_seconds: null },
+    { label: "Think · 1 / 2 left", window_seconds: null },
+  ];
+  assert.deepEqual(widgetWindows("grok", free), free);
+  assert.deepEqual(widgetWindows("grok_bot", [windows[0]]), [windows[0]]);
 });
 
 test("widget keeps both Antigravity weekly pools and drops the five-hour ones", () => {
@@ -117,6 +125,49 @@ test("widget colors match the extension thresholds", () => {
   assert.equal(quotaTone(69.9), "ok");
   assert.equal(quotaTone(70), "warning");
   assert.equal(quotaTone(90), "critical");
+  assert.equal(quotaTone(80, "normal"), "ok");
+  assert.equal(quotaTone(20, "warning"), "warning");
+  assert.equal(quotaTone(20, "severe"), "critical");
+});
+
+test("last-updated uses observations, never failed attempt time", () => {
+  assert.equal(providerObservationMs({ status: "error", fetched_at: 2_000 }), null);
+  assert.equal(providerObservationMs({ status: "action_required", fetched_at: 2_000 }), null);
+  assert.equal(providerObservationMs({ status: "ok", fetched_at: 2_000 }), 2_000_000);
+  assert.equal(
+    providerObservationMs({
+      status: "ok",
+      fetched_at: 2_000,
+      stale: { observed_at: 1_000 },
+    }),
+    1_000_000,
+  );
+  assert.equal(
+    providerObservationMs({ status: "ok", fetched_at: 2_000, stale: { observed_at: null } }),
+    null,
+  );
+  assert.equal(providerObservationMs({ status: "unavailable", fetched_at: 3_000 }), 3_000_000);
+});
+
+test("a fast provider settles before a slow sibling finishes", async () => {
+  let releaseSlow;
+  const slow = new Promise((resolve) => {
+    releaseSlow = resolve;
+  });
+  const settled = [];
+  const all = settleProviders(
+    [{ id: "slow" }, { id: "fast" }],
+    async ({ id }) => {
+      if (id === "slow") await slow;
+      return true;
+    },
+    ({ id }) => settled.push(id),
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(settled, ["fast"]);
+  releaseSlow();
+  await all;
+  assert.deepEqual(settled, ["fast", "slow"]);
 });
 
 test("a hidden provider leaves the schedule and unknown ids are ignored", () => {

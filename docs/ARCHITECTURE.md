@@ -204,6 +204,13 @@ request. The dashboard scheduler honors `retry_after_seconds` as given and does
 not keep a second backoff table. A changed Claude Code credential generation
 clears only the old credential's gate.
 
+Both Claude persistence files—the rate-limit state and the last successful
+usage snapshot—are written through a temporary file followed by an atomic
+rename. This prevents an interrupted write from leaving malformed JSON. If
+Claude credentials disappear, a recent snapshot is still shown as stale; once
+that snapshot is too old, the card changes to `action_required` instead of
+incorrectly looking like a first-time setup.
+
 Builds that capped `Retry-After` at 15 minutes are migrated once: a still-future
 deadline is kept, the inflated failure count is dropped, and the new policy
 takes over. A successful response clears the breaker and is stored as a
@@ -211,6 +218,13 @@ quota-only snapshot. If a later live request fails, unexpired rows remain
 visible as cached for at most 24 hours, with the reason and retry countdown
 still visible. If the six-minute floor is still running and no snapshot exists,
 the next live check is allowed rather than inventing an error card.
+
+Provider refreshes settle independently. Each card is rendered and published
+to the widget as soon as its own fetch finishes, so a slow or recovering
+provider cannot hold back unrelated cards. The global “Last updated” time
+advances only from a successful or explicitly unavailable provider observation
+(and uses a stale snapshot's original observation time), never from a
+wall-clock error response.
 
 **Credentials stay in memory.** No token value may reach a log line, an error
 message, or a crash report.
@@ -528,9 +542,10 @@ The companion refreshes Grok every three minutes even while its tab is hidden.
 The schedule belongs to the MV3 service worker's `chrome.alarms`, which messages
 all open provider tabs; ordinary content-script intervals proved unreliable in
 Comet even after removing their visibility guard. Matching provider tabs are
-marked non-auto-discardable. If Chromium nevertheless reports one frozen or
-discarded, the service worker reloads it; returning from an idle or locked system
-state also triggers an immediate refresh. Browser or tab closure still stops
+marked non-auto-discardable. If Chromium reports one as discarded, the service
+worker reloads it. A frozen tab is deliberately left untouched to preserve
+unsent drafts and page state; returning from an idle or locked system state
+still triggers an immediate refresh. Browser or tab closure still stops
 collection; the CLI and reusable snapshot remain the fallback in that case.
 
 ---
@@ -546,8 +561,9 @@ amount of cookie access substitutes for it. Gemini is therefore push-only *and*
 requires an open `gemini.google.com` tab. While that tab remains loaded, the
 companion's MV3 alarm asks the tab to refresh and push quota every three minutes
 even when it is in the background. The bridge opts matching tabs out of automatic
-discarding and reloads one already reported as frozen or discarded. Closing the
-browser or every matching tab still freezes the numbers at whatever arrived last.
+discarding and reloads one only if Chromium reports it as discarded. Frozen tabs
+are not reloaded, preserving in-progress page state until Chromium resumes them.
+Closing the browser or every matching tab still freezes the numbers at whatever arrived last.
 The dashboard must show the age rather than the illusion of a live figure.
 
 ### Deck companion collector
@@ -824,11 +840,13 @@ names the window, the app never guesses from its slot.**
 
 The full dashboard renders every reported window with reset and pace details.
 Widget and Strip reuse the same normalized data but compress it to period
-labels and percentages; Grok intentionally shows only its seven-day window.
+labels and percentages. Grok and Grok Bot prefer a seven-day window when one
+exists, then fall back to the actual Free, Daily, Monthly, or first reported
+window rather than showing an empty card.
 Strip further shortens provider titles to two letters — CL, CO, AG, GE, GR, GB — so the
 bar stays narrow; the full name remains on hover. Compact values follow the
-companion extensions' thresholds: green below 70%, amber from 70%, and red
-from 90%.
+provider-supplied severity so provider-specific warning semantics match the
+dashboard; percentage thresholds remain the fallback.
 
 ---
 
@@ -957,14 +975,17 @@ judgement, not a measurement: nothing above was tested, and reopening the route
 starts by testing that first gate.
 
 **Production shape.** `bundle.resources` ships `browser-bridge/` inside the
-installer; on startup the app stages it to
+installer; on startup the app builds a complete sibling staging directory and
+then swaps it atomically into
 `%LOCALAPPDATA%\ai-quota-deck\browser-bridge`, keyed by an `.installed-version`
 stamp, and exposes that path through the `bridge_dir` command so the setup panel
 can offer **Copy path** and **Open folder**. A fixed staging path is required
 because `targets: "all"` produces both MSI and NSIS bundles with different
-install roots, and NSIS lets the user change its root again. Staging also makes
-an app update a bridge update: Chrome re-reads an unpacked extension from disk
-on browser restart.
+install roots, and NSIS lets the user change its root again. Completing the new
+directory before activation prevents an interrupted installer from leaving a
+mixed-version extension; an activation failure restores the previous directory.
+Staging also makes an app update a bridge update: Chrome re-reads an unpacked
+extension from disk on browser restart.
 
 Publishing `browser-bridge/` as its own Chrome Web Store item remains the
 long-term answer and would remove the Developer mode requirement entirely. The

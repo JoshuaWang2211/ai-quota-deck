@@ -68,7 +68,7 @@ function staleDetails(providerId, quota) {
 }
 
 function renderMetric(window_) {
-  const metric = el("span", `widget-metric ${quotaTone(window_.percent)}`);
+  const metric = el("span", `widget-metric ${quotaTone(window_.percent, window_.severity)}`);
   const reset = window_.resets_at
     ? window_.resets_at > nowSec()
       ? ` · Resets in ${duration(window_.resets_at - nowSec())}`

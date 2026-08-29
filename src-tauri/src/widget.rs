@@ -158,6 +158,21 @@ impl WidgetState {
         false
     }
 
+    fn continue_user_drag(&self) -> bool {
+        let Ok(mut until) = self.user_drag_until.lock() else {
+            return false;
+        };
+        if until.is_some_and(|deadline| deadline > Instant::now()) {
+            // Native drag loops do not provide a portable end event. Each real
+            // WM_MOVE is proof that the gesture continues, so keep the final
+            // drop eligible even when a careful multi-monitor drag exceeds 30s.
+            *until = Some(Instant::now() + USER_DRAG_WINDOW);
+            return true;
+        }
+        *until = None;
+        false
+    }
+
     fn expect_programmatic_position(&self, position: PhysicalPosition<i32>) {
         if let Ok(mut expected) = self.programmatic_position.lock() {
             *expected = Some((position, Instant::now() + PROGRAMMATIC_MOVE_WINDOW));
@@ -181,7 +196,7 @@ impl WidgetState {
         if self.position_updates_suspended.load(Ordering::Acquire) {
             return Ok(());
         }
-        if self.is_programmatic_position(position) || !self.user_drag_active() {
+        if self.is_programmatic_position(position) || !self.continue_user_drag() {
             return Ok(());
         }
         let mut preferences = self.snapshot()?;
@@ -723,6 +738,20 @@ mod tests {
         preferences.x = Some(285);
         preferences.y = Some(1_789);
         assert!(!should_place_after_resize(&preferences));
+    }
+
+    #[test]
+    fn each_real_move_extends_the_drag_window() {
+        let state = WidgetState {
+            preferences: Mutex::new(WidgetPreferences::default()),
+            position_updates_suspended: AtomicBool::new(false),
+            user_drag_until: Mutex::new(Some(Instant::now() + Duration::from_secs(1))),
+            programmatic_position: Mutex::new(None),
+        };
+        let before = *state.user_drag_until.lock().unwrap();
+        assert!(state.continue_user_drag());
+        let after = *state.user_drag_until.lock().unwrap();
+        assert!(after > before);
     }
 
     #[test]

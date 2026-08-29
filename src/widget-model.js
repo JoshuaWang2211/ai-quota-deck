@@ -40,13 +40,22 @@ export function compactWindowLabel(window_) {
 // pool. Antigravity shows the weekly bucket of each of its two pools. The
 // five-hour buckets stay on the dashboard.
 export function widgetWindows(providerId, windows = []) {
-  if (providerId === "grok") return windows.filter(isSevenDayWindow).slice(0, 1);
-  if (providerId === "grok_bot") return windows.filter(isSevenDayWindow).slice(0, 1);
+  if (providerId === "grok") {
+    const weekly = windows.filter(isSevenDayWindow);
+    return weekly.length ? weekly.slice(0, 1) : windows;
+  }
+  if (providerId === "grok_bot") {
+    const weekly = windows.filter(isSevenDayWindow);
+    return weekly.length ? weekly.slice(0, 1) : windows.slice(0, 1);
+  }
   if (providerId === "antigravity") return windows.filter(isSevenDayWindow);
   return windows;
 }
 
-export function quotaTone(percent) {
+export function quotaTone(percent, severity) {
+  if (severity === "critical" || severity === "severe") return "critical";
+  if (severity === "warning") return "warning";
+  if (severity === "normal") return percent >= 90 ? "critical" : "ok";
   if (percent >= 90) return "critical";
   if (percent >= 70) return "warning";
   return "ok";

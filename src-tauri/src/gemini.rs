@@ -62,7 +62,7 @@ fn browser_quota_from_cache(raw: &str, current_time: i64) -> Option<ProviderQuot
         return None;
     }
 
-    let age = current_time - cache.observed_at;
+    let age = current_time.checked_sub(cache.observed_at)?;
     if !(-CLOCK_SKEW_SECONDS..=CACHE_MAX_AGE_SECONDS).contains(&age) {
         return None;
     }

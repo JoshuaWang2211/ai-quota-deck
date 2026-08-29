@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 /// One quota window as the dashboard renders it.
 ///
@@ -202,6 +203,19 @@ pub fn now() -> i64 {
     chrono::Utc::now().timestamp()
 }
 
+/// Replace a small state file without ever exposing truncated JSON to readers.
+/// The staging file is process-specific so independent native-host processes
+/// can update sibling caches without sharing temporary names.
+pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let staging = path.with_extension(format!("tmp-{}", std::process::id()));
+    std::fs::write(&staging, bytes)
+        .map_err(|error| format!("cannot write {}: {error}", staging.display()))?;
+    std::fs::rename(&staging, path).map_err(|error| {
+        let _ = std::fs::remove_file(&staging);
+        format!("cannot replace {}: {error}", path.display())
+    })
+}
+
 /// Phrase a failing status so the card says what happened, not what the
 /// protocol called it. A 429 in particular is the deck's own fault for asking
 /// too often, and telling the user "429 Too Many Requests" invites them to
@@ -260,6 +274,7 @@ pub fn label_for_window_minutes(minutes: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn names_the_four_windows_codex_reports() {
@@ -301,5 +316,25 @@ mod tests {
         .unwrap();
         assert_eq!(json["status"], "not_configured");
         assert_eq!(json["provider"], "gemini");
+    }
+
+    #[test]
+    fn atomic_write_replaces_an_existing_state_file() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("ai-quota-deck-atomic-{unique}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("state.json");
+        std::fs::write(&path, b"old").unwrap();
+
+        atomic_write(&path, b"new complete bytes").unwrap();
+
+        assert_eq!(std::fs::read(&path).unwrap(), b"new complete bytes");
+        assert!(!path
+            .with_extension(format!("tmp-{}", std::process::id()))
+            .exists());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

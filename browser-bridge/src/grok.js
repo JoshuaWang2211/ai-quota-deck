@@ -95,7 +95,11 @@
     if (!data) return;
 
     const fetchedAt = Date.now();
-    await chrome.storage.local.set({ [DATA_KEY]: data, [FETCH_TIME_KEY]: fetchedAt });
+    try {
+      await chrome.storage.local.set({ [DATA_KEY]: data, [FETCH_TIME_KEY]: fetchedAt });
+    } catch (error) {
+      // The native host still gets the live reading; storage is only a browser cache.
+    }
     pushQuota(data, fetchedAt);
   }
 

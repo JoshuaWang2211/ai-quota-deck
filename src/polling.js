@@ -47,3 +47,23 @@ export function providerRetryDelay(result, provider, failures, defaultBackoffMs)
     provider.pollMs ?? 0,
   );
 }
+
+// "Last updated" means the newest usable provider observation, not the time a
+// failed request happened. Cached rows retain the provider's original age.
+export function providerObservationMs(result) {
+  if (result?.status !== "ok" && result?.status !== "unavailable") return null;
+  const seconds = result?.stale ? result.stale.observed_at : result?.fetched_at;
+  return typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0
+    ? seconds * 1000
+    : null;
+}
+
+export async function settleProviders(providers, check, onSettled) {
+  await Promise.all(
+    providers.map(async (provider) => {
+      const attempted = await check(provider);
+      if (attempted) onSettled(provider);
+      return attempted;
+    }),
+  );
+}

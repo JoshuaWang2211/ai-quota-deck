@@ -2,9 +2,11 @@ import {
   enabledProviders,
   isUserAway,
   missedRefreshCycle,
+  providerObservationMs,
   providerRequestFloor,
   providerRetryDelay,
   resumeGraceDeadline,
+  settleProviders,
 } from "./polling.js";
 const { invoke } = window.__TAURI__.core;
 const { emitTo, listen } = window.__TAURI__.event;
@@ -461,9 +463,7 @@ async function setProviderHidden(provider, hidden, checkbox) {
   // cycle is running. The provider's own floor and backoff gates still decide
   // whether a request is actually sent.
   const attempted = await fetchProvider(provider);
-  if (attempted && results[provider.id]?.status !== "not_configured") {
-    lastUpdatedAt = new Date();
-  }
+  if (attempted) noteProviderObservation(results[provider.id]);
   render();
   document.querySelector(`[data-provider="${provider.id}"]`)?.focus();
 }
@@ -530,20 +530,36 @@ function configuredProviders() {
 }
 
 function render() {
+  renderProviderResults();
   const active = activeProviders();
   const checked = allProvidersChecked();
-  const configured = configuredProviders();
   const missing = checked
     ? active.filter(({ id }) => results[id].status === "not_configured")
     : [];
+  renderProviderControls(missing);
+}
+
+// Provider calls finish independently. Update cards and the companion as each
+// one lands without rebuilding the source picker under a user's keyboard focus.
+function renderProviderResults() {
+  const active = activeProviders();
+  const checked = allProvidersChecked();
+  const configured = configuredProviders();
 
   providersEl.replaceChildren(
     ...(configured.length
       ? configured.map((provider) => renderProvider(provider, results[provider.id]))
       : [renderEmptyState(checked, active.length === 0)]),
   );
-  renderProviderControls(missing);
   publishWidgetSnapshot();
+}
+
+function noteProviderObservation(result) {
+  const observedAt = providerObservationMs(result);
+  if (observedAt == null) return;
+  if (!lastUpdatedAt || observedAt > lastUpdatedAt.getTime()) {
+    lastUpdatedAt = new Date(observedAt);
+  }
 }
 
 function publishWidgetSnapshot() {
@@ -693,15 +709,17 @@ async function refresh(providers = activeProviders(), { markUpdated = true } = {
   const checksActivity = providers.some((provider) => provider.pauseWhileAway);
   const activity = checksActivity ? await invoke("system_activity").catch(() => null) : null;
   const userAway = isUserAway(activity, IDLE_PAUSE_SECONDS);
-  const attempted = await Promise.all(
-    providers.map((provider) => fetchProvider(provider, { userAway })),
+  await settleProviders(
+    providers,
+    (provider) => fetchProvider(provider, { userAway }),
+    (provider) => {
+      if (markUpdated) noteProviderObservation(results[provider.id]);
+      renderProviderResults();
+      updateRefreshStatus();
+    },
   );
 
   render();
-  const updatedConfiguredProvider = providers.some(
-    (provider, index) => attempted[index] && results[provider.id]?.status !== "not_configured",
-  );
-  if (markUpdated && updatedConfiguredProvider) lastUpdatedAt = new Date();
   inFlight = false;
   updateRefreshStatus();
 }

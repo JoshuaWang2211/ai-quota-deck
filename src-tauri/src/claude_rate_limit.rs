@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::quota::atomic_write;
+
 /// A 429 must never make the deck more aggressive than a healthy Claude poll.
 pub const CLAUDE_REQUEST_FLOOR_SECONDS: u64 = 6 * 60;
 /// Without Retry-After, open the circuit for 6, 12, 24, 48, then 60 minutes.
@@ -115,8 +117,7 @@ pub fn write_rate_limit_state(state: &RateLimitState) -> Result<(), String> {
         .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
     let bytes = serde_json::to_vec(state)
         .map_err(|error| format!("cannot serialize Claude rate-limit state: {error}"))?;
-    std::fs::write(&path, bytes)
-        .map_err(|error| format!("cannot write {}: {error}", path.display()))
+    atomic_write(&path, &bytes)
 }
 
 pub fn rate_limit_remaining(state: &RateLimitState, current_time: i64) -> Option<u64> {

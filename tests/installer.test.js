@@ -15,3 +15,10 @@ test("only Tauri's finish-page action creates the desktop shortcut", () => {
   assert.match(hook, /!macro NSIS_HOOK_POSTINSTALL/);
   assert.match(hook, /Delete "\$DESKTOP\\\$\{DECK_OLD_SHORTCUT_NAME\}\.lnk"/);
 });
+
+test("update-mode uninstall preserves current shortcuts", () => {
+  assert.match(hook, /\$\{If\} \$UpdateMode <> 1/);
+  const guarded = hook.slice(hook.indexOf("${If} $UpdateMode <> 1"), hook.indexOf("${EndIf}"));
+  assert.match(guarded, /DECK_SHORTCUT_NAME/);
+  assert.doesNotMatch(guarded, /DECK_OLD_SHORTCUT_NAME/);
+});
