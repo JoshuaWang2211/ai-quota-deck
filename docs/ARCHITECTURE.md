@@ -103,7 +103,8 @@ stranded by a throttled hidden WebView; request floors and backoff remain in
 control. Neither companion view adds Claude, Codex, Antigravity, Gemini, or Grok
 requests.
 
-Selected view, Widget lock state, Taskbar overlay opt-in, and both sets of
+Selected view, Widget lock state, Taskbar overlay opt-in, percentage display
+direction, and both sets of
 physical screen coordinates are stored in
 `%LOCALAPPDATA%\ai-quota-deck\widget.json`. The three views are Dashboard,
 Widget, and Strip, stored as the existing `visible` + `strip` pair so older
@@ -113,6 +114,13 @@ alignment are ignored. After wake, the native activity watcher reasserts
 always-on-top state and retries the saved position while monitors settle. If a
 saved monitor is unavailable, the window can fall back to the primary display
 without erasing the original coordinates.
+
+Provider adapters and caches always normalize percentages as allowance
+consumed. `usage_display` is a presentation-only preference: `used` renders the
+normalized value, while `remaining` renders `100 − used`. Dashboard mirrors both
+the fill and pace marker in Remaining mode, but urgency colors and ahead-of-pace
+detection continue to use consumed quota. Older preference files omit this field
+and therefore default to `used`.
 
 While the Taskbar overlay is active, a Windows-native watcher enumerates primary
 and secondary taskbars and aligns the Strip inside the nearest one without

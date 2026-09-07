@@ -23,7 +23,7 @@ A Windows tray dashboard for Claude Code, Codex, Antigravity, Gemini, Grok, and 
   <img src="./assets/screenshot3.png" alt="AI Quota Deck strip view" width="500">
 </p>
 
-The dashboard includes reset times, pace indicators, plan badges, and cached-data status. Widget and Strip views keep the essential color-coded percentages in sight.
+The dashboard includes reset times, pace indicators, plan badges, and cached-data status. Widget and Strip views keep the essential color-coded percentages in sight. Choose whether every view shows allowance used or allowance remaining.
 
 ---
 
@@ -44,6 +44,7 @@ Other features:
 
 - Dashboard, Widget, and Strip views
 - Choose which providers appear; hidden providers are not polled at all
+- Show quota percentages as either used or remaining allowance across every view
 - Always-on-top widget with a remembered, lockable position
 - Compact horizontal strip that can float anywhere or pin above the Windows taskbar without reserving work area
 - Light, dark, and system themes
@@ -59,7 +60,7 @@ In Strip view, click the pin-shaped taskbar button, then drag the Strip to any f
 
 **Requires Windows 10 or 11.**
 
-1. [Download the latest installer](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.3.2_x64-setup.exe).
+1. [Download the latest installer](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.3.3_x64-setup.exe).
 2. Run it, then launch **AI Quota Deck**.
 3. Close the window to return it to the system tray; left-click the tray icon to reopen it.
 
@@ -96,7 +97,7 @@ Gemini and Grok usage is read from a browser tab through the bundled **AI Quota 
 
 ### Setup
 
-1. Launch AI Quota Deck once and open **AI sources** near the top of the dashboard.
+1. Launch AI Quota Deck once and open **AI sources & display** near the top of the dashboard.
 2. Copy or open the bridge folder shown by the app:
 
    ```text

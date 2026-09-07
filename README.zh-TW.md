@@ -23,7 +23,7 @@
   <img src="./assets/screenshot3.png" alt="AI Quota Deck Strip" width="500">
 </p>
 
-Dashboard 會顯示重置時間、使用速度、方案與快取狀態；Widget 與 Strip 則保留最重要的百分比，並依用量顯示綠、黃、紅色。
+Dashboard 會顯示重置時間、使用速度、方案與快取狀態；Widget 與 Strip 則保留最重要的百分比，並依用量顯示綠、黃、紅色。三種畫面都能自行選擇顯示已使用或剩餘額度。
 
 ---
 
@@ -44,6 +44,7 @@ Dashboard 會顯示重置時間、使用速度、方案與快取狀態；Widget 
 
 - Dashboard、Widget 與 Strip 三種顯示方式
 - 可從 Dashboard 上方快速切換要顯示哪些服務；隱藏的服務完全不會被查詢
+- 可在所有畫面中選擇以「已使用」或「剩餘」百分比顯示額度
 - 可置頂、記住位置並鎖定移動的 Widget
 - 可放在螢幕任意位置，或釘在 Windows 工作列上方且不占用工作區的精簡橫向 Strip
 - 淺色、深色與跟隨系統主題
@@ -59,7 +60,7 @@ Dashboard 會顯示重置時間、使用速度、方案與快取狀態；Widget 
 
 **系統需求：Windows 10 或 11。**
 
-1. [點此下載最新安裝檔](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.3.2_x64-setup.exe)。
+1. [點此下載最新安裝檔](https://github.com/JoshuaWang2211/ai-quota-deck/releases/latest/download/ai-quota-deck_0.3.3_x64-setup.exe)。
 2. 執行安裝檔，再啟動 **AI Quota Deck**。
 3. 關閉視窗會回到系統匣；左鍵點擊系統匣圖示即可重新開啟。
 
@@ -96,7 +97,7 @@ Gemini 與 Grok 必須透過隨附的 **AI Quota Deck Browser Bridge** 從瀏覽
 
 ### 設定步驟
 
-1. 先啟動一次 AI Quota Deck，再開啟 Dashboard 上方的 **AI sources**。
+1. 先啟動一次 AI Quota Deck，再開啟 Dashboard 上方的 **AI sources & display**。
 2. 複製或開啟 App 顯示的 Bridge 資料夾：
 
    ```text

@@ -257,8 +257,8 @@ body {
 }
 
 /* The one addition to the family's vocabulary: where even consumption would
-   have you by now. Fill past the mark means the window is burning faster than
-   it refills. Absent when the provider never says how long its window runs. */
+   have you by now. Used mode is ahead when fill passes the mark; Remaining
+   mode mirrors both values, so it is ahead when fill falls short. */
 .track-pace {
   position: absolute;
   top: -3px;
@@ -478,6 +478,76 @@ body {
   border-top: 1px solid var(--rule);
 }
 
+.usage-display-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 11px;
+  border-top: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+.usage-display-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.usage-display-copy strong {
+  color: var(--title);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.usage-display-copy span {
+  color: var(--label);
+  font-size: 9.5px;
+}
+
+.usage-display-choices {
+  display: flex;
+  padding: 2px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--track);
+}
+
+.usage-display-choice {
+  position: relative;
+  cursor: pointer;
+}
+
+.usage-display-choice input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.usage-display-choice span {
+  display: block;
+  padding: 4px 7px;
+  border-radius: 5px;
+  color: var(--label);
+  font-size: 10px;
+  line-height: 1.2;
+  transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.usage-display-choice input:checked + span {
+  background: var(--surface-strong);
+  color: var(--title);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.usage-display-choice input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .source-option {
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr) 36px;
@@ -694,6 +764,7 @@ body {
   .source-mark,
   .source-switch,
   .source-switch::after,
+  .usage-display-choice span,
   .sources-chevron {
     transition: none;
   }

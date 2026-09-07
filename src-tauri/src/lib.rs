@@ -194,6 +194,15 @@ fn set_provider_hidden(
 }
 
 #[tauri::command]
+fn set_usage_display(
+    app: AppHandle,
+    state: State<'_, widget::WidgetState>,
+    mode: String,
+) -> Result<widget::WidgetPreferences, String> {
+    widget::set_usage_display(&app, &state, &mode)
+}
+
+#[tauri::command]
 fn start_widget_drag(
     window: WebviewWindow,
     state: State<'_, widget::WidgetState>,
@@ -475,6 +484,7 @@ pub fn run() {
             resize_widget,
             set_taskbar_overlay,
             set_provider_hidden,
+            set_usage_display,
             open_dashboard
         ])
         .run(tauri::generate_context!())

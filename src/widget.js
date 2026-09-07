@@ -1,7 +1,9 @@
 import {
   compactProviderName,
   compactWindowLabel,
+  displayedPercent,
   quotaTone,
+  usageDisplayLabel,
   visibleProviders,
   WIDGET_PROVIDERS,
   widgetWindows,
@@ -26,6 +28,7 @@ let preferences = {
   strip: false,
   taskbar_overlay: false,
   hidden_providers: [],
+  usage_display: "used",
 };
 let resizeFrame = null;
 
@@ -69,15 +72,17 @@ function staleDetails(providerId, quota) {
 
 function renderMetric(window_) {
   const metric = el("span", `widget-metric ${quotaTone(window_.percent, window_.severity)}`);
+  const percent = displayedPercent(window_.percent, preferences.usage_display);
+  const displayLabel = usageDisplayLabel(preferences.usage_display);
   const reset = window_.resets_at
     ? window_.resets_at > nowSec()
       ? ` · Resets in ${duration(window_.resets_at - nowSec())}`
       : " · Resetting now"
     : "";
-  metric.title = `${window_.label}: ${Math.round(window_.percent)}% used${reset}`;
+  metric.title = `${window_.label}: ${Math.round(percent)}% ${displayLabel}${reset}`;
   metric.append(
     el("span", "metric-period", compactWindowLabel(window_)),
-    el("span", "metric-value", `${Math.round(window_.percent)}%`),
+    el("span", "metric-value", `${Math.round(percent)}%`),
   );
   return metric;
 }

@@ -4,6 +4,15 @@ All notable changes to AI Quota Deck are documented here.
 
 ---
 
+## v0.3.3 - 2026-09-07
+
+- Added a persisted **Used / Remaining** quota display preference. Dashboard, Widget, and Strip now switch together, with Remaining calculated as `100% − used` to match ChatGPT Desktop's presentation.
+- Kept provider data, pace detection, and warning colors based on consumed quota so changing the display direction cannot invert urgency or alter cached readings.
+- Renamed the polished source picker to **AI sources & display** and added an accessible segmented choice without adding another permanent toolbar control.
+- Version bumped to 0.3.3 across the app, installer, dashboard footer, and Browser Bridge.
+
+---
+
 ## v0.3.2 - 2026-08-29
 
 - Fixed paid Grok accounts being shown as Free when an anonymous browser snapshot coexisted with an expired or unreachable Grok Build credential.

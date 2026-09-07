@@ -49,6 +49,24 @@ impl DisplayMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum UsageDisplay {
+    #[default]
+    Used,
+    Remaining,
+}
+
+impl UsageDisplay {
+    fn parse(mode: &str) -> Result<Self, String> {
+        match mode {
+            "used" => Ok(Self::Used),
+            "remaining" => Ok(Self::Remaining),
+            _ => Err(format!("unknown usage display: {mode}")),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 #[serde(default)]
 pub struct WidgetPreferences {
@@ -61,6 +79,7 @@ pub struct WidgetPreferences {
     pub strip_y: Option<i32>,
     pub taskbar_overlay: bool,
     pub hidden_providers: Vec<String>,
+    pub usage_display: UsageDisplay,
 }
 
 impl WidgetPreferences {
@@ -483,6 +502,23 @@ pub fn set_provider_hidden(
     Ok(preferences)
 }
 
+pub fn set_usage_display(
+    app: &AppHandle,
+    state: &WidgetState,
+    mode: &str,
+) -> Result<WidgetPreferences, String> {
+    let previous = state.snapshot()?;
+    let usage_display = UsageDisplay::parse(mode)?;
+    if previous.usage_display == usage_display {
+        return Ok(previous);
+    }
+    let mut next = previous;
+    next.usage_display = usage_display;
+    let preferences = state.replace(next)?;
+    emit_preferences(app, &preferences);
+    Ok(preferences)
+}
+
 #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
 pub fn set_taskbar_overlay(
     app: &AppHandle,
@@ -670,6 +706,7 @@ mod tests {
         assert!(!preferences.strip);
         assert_eq!(preferences.x, None);
         assert_eq!(preferences.strip_x, None);
+        assert_eq!(preferences.usage_display, UsageDisplay::Used);
     }
 
     #[test]
@@ -766,6 +803,7 @@ mod tests {
             strip_y: Some(300),
             taskbar_overlay: true,
             hidden_providers: Vec::new(),
+            usage_display: UsageDisplay::Remaining,
         };
         let dashboard = preferences_for_mode(original.clone(), "dashboard").unwrap();
         assert!(!dashboard.visible);
@@ -774,6 +812,7 @@ mod tests {
         assert_eq!(dashboard.x, Some(120));
         assert_eq!(dashboard.strip_x, Some(500));
         assert!(dashboard.taskbar_overlay);
+        assert_eq!(dashboard.usage_display, UsageDisplay::Remaining);
 
         let widget = preferences_for_mode(original.clone(), "widget").unwrap();
         assert!(widget.visible);
@@ -817,6 +856,25 @@ mod tests {
             serde_json::from_str(r#"{"visible":true,"strip":true,"strip_x":8,"strip_y":1040}"#)
                 .unwrap();
         assert!(preferences.hidden_providers.is_empty());
+        assert_eq!(preferences.usage_display, UsageDisplay::Used);
+    }
+
+    #[test]
+    fn usage_display_accepts_only_persisted_modes() {
+        assert_eq!(UsageDisplay::parse("used").unwrap(), UsageDisplay::Used);
+        assert_eq!(
+            UsageDisplay::parse("remaining").unwrap(),
+            UsageDisplay::Remaining
+        );
+        assert!(UsageDisplay::parse("available").is_err());
+
+        let original = WidgetPreferences {
+            usage_display: UsageDisplay::Remaining,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let restored: WidgetPreferences = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.usage_display, UsageDisplay::Remaining);
     }
 
     #[test]

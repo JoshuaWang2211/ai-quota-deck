@@ -60,3 +60,12 @@ export function quotaTone(percent, severity) {
   if (percent >= 70) return "warning";
   return "ok";
 }
+
+export function displayedPercent(usedPercent, mode = "used") {
+  const used = Math.min(100, Math.max(0, usedPercent));
+  return mode === "remaining" ? 100 - used : used;
+}
+
+export function usageDisplayLabel(mode = "used") {
+  return mode === "remaining" ? "left" : "used";
+}

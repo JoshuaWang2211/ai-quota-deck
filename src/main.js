@@ -8,6 +8,7 @@ import {
   resumeGraceDeadline,
   settleProviders,
 } from "./polling.js";
+import { displayedPercent, usageDisplayLabel } from "./widget-model.js";
 const { invoke } = window.__TAURI__.core;
 const { emitTo, listen } = window.__TAURI__.event;
 
@@ -97,7 +98,13 @@ const widgetModeEl = document.getElementById("widget-mode");
 const stripModeEl = document.getElementById("strip-mode");
 const themeEl = document.getElementById("theme");
 
-let widgetPreferences = { visible: false, locked: false, strip: false, hidden_providers: [] };
+let widgetPreferences = {
+  visible: false,
+  locked: false,
+  strip: false,
+  hidden_providers: [],
+  usage_display: "used",
+};
 
 const nowSec = () => Math.floor(Date.now() / 1000);
 
@@ -219,8 +226,10 @@ function el(tag, className, text) {
 }
 
 function renderWindow(window_) {
-  const percent = Math.min(100, Math.max(0, window_.percent));
+  const percent = displayedPercent(window_.percent, widgetPreferences.usage_display);
   const pace = pacePercent(window_);
+  const displayedPace =
+    pace === null ? null : displayedPercent(pace, widgetPreferences.usage_display);
 
   const row = el("div", "row");
   row.style.setProperty("--meter", meterVar(window_.percent, window_.severity));
@@ -229,16 +238,16 @@ function renderWindow(window_) {
   const head = el("div", "row-head");
   head.append(el("span", "row-label", window_.label));
 
-  const figure = el("span", "row-figure", Math.round(window_.percent).toString());
-  figure.append(el("span", "unit", "%"));
+  const figure = el("span", "row-figure", Math.round(percent).toString());
+  figure.append(el("span", "unit", `% ${usageDisplayLabel(widgetPreferences.usage_display)}`));
   head.append(figure);
   row.append(head);
 
   const track = el("div", "track");
   track.append(el("div", "track-fill"));
-  if (pace !== null) {
+  if (displayedPace !== null) {
     const mark = el("div", "track-pace");
-    mark.style.setProperty("--pace-at", `${pace}%`);
+    mark.style.setProperty("--pace-at", `${displayedPace}%`);
     track.append(mark);
   }
   row.append(track);
@@ -358,11 +367,15 @@ function renderProviderControls(missingProviders) {
   providerControlsEl.replaceChildren();
 
   const activeIds = new Set(activeProviders().map(({ id }) => id));
+  const displayName = widgetPreferences.usage_display === "remaining" ? "Remaining" : "Used";
   const button = el("button", "sources-trigger");
   button.type = "button";
   button.setAttribute("aria-expanded", sourcesExpanded.toString());
   button.setAttribute("aria-controls", "source-picker");
-  button.setAttribute("aria-label", `Choose AI sources. ${activeIds.size} of ${PROVIDERS.length} shown.`);
+  button.setAttribute(
+    "aria-label",
+    `Choose AI sources and quota display. ${activeIds.size} of ${PROVIDERS.length} shown; values show ${displayName.toLowerCase()}.`,
+  );
 
   const orbit = el("span", "source-orbit");
   orbit.setAttribute("aria-hidden", "true");
@@ -375,8 +388,12 @@ function renderProviderControls(missingProviders) {
 
   const copy = el("span", "sources-trigger-copy");
   copy.append(
-    el("span", "sources-trigger-label", "AI sources"),
-    el("span", "sources-trigger-meta", `${activeIds.size} of ${PROVIDERS.length} shown`),
+    el("span", "sources-trigger-label", "AI sources & display"),
+    el(
+      "span",
+      "sources-trigger-meta",
+      `${activeIds.size} of ${PROVIDERS.length} shown · ${displayName}`,
+    ),
   );
   button.append(orbit, copy, el("span", "sources-chevron"));
   button.addEventListener("click", () => {
@@ -429,10 +446,60 @@ function renderProviderControls(missingProviders) {
     list.append(item);
   }
   panel.append(list);
+  panel.append(renderUsageDisplay());
   if (bridgePath && missingProviders.some(({ optional }) => optional)) {
     panel.append(renderBridgeHelp());
   }
   providerControlsEl.append(panel);
+}
+
+function renderUsageDisplay() {
+  const row = el("div", "usage-display-option");
+  const copy = el("span", "usage-display-copy");
+  copy.append(
+    el("strong", null, "Quota values"),
+    el("span", null, "Choose consumed or available allowance."),
+  );
+
+  const choices = el("div", "usage-display-choices");
+  choices.setAttribute("role", "radiogroup");
+  choices.setAttribute("aria-label", "Quota value display");
+  for (const [mode, label] of [
+    ["used", "Used"],
+    ["remaining", "Remaining"],
+  ]) {
+    const choice = el("label", "usage-display-choice");
+    const input = el("input");
+    input.type = "radio";
+    input.name = "usage-display";
+    input.value = mode;
+    input.checked = widgetPreferences.usage_display === mode;
+    input.dataset.usageDisplay = mode;
+    input.addEventListener("change", () => {
+      if (input.checked) void setUsageDisplay(mode, input);
+    });
+    choice.append(input, el("span", null, label));
+    choices.append(choice);
+  }
+  row.append(copy, choices);
+  return row;
+}
+
+async function setUsageDisplay(mode, input) {
+  try {
+    applyWidgetPreferences(await invoke("set_usage_display", { mode }));
+  } catch (error) {
+    input.checked = false;
+    const current = document.querySelector(
+      `[data-usage-display="${widgetPreferences.usage_display}"]`,
+    );
+    if (current) current.checked = true;
+    input.title = `Could not change quota display: ${error}`;
+    input.focus();
+    return;
+  }
+  render();
+  document.querySelector(`[data-usage-display="${mode}"]`)?.focus();
 }
 
 function providerStatus(provider, visible) {

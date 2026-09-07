@@ -14,7 +14,9 @@ import {
 import {
   compactProviderName,
   compactWindowLabel,
+  displayedPercent,
   quotaTone,
+  usageDisplayLabel,
   visibleProviders,
   WIDGET_PROVIDERS,
   widgetWindows,
@@ -128,6 +130,15 @@ test("widget colors match the extension thresholds", () => {
   assert.equal(quotaTone(80, "normal"), "ok");
   assert.equal(quotaTone(20, "warning"), "warning");
   assert.equal(quotaTone(20, "severe"), "critical");
+});
+
+test("usage display can show consumed or remaining allowance", () => {
+  assert.equal(displayedPercent(40, "used"), 40);
+  assert.equal(displayedPercent(40, "remaining"), 60);
+  assert.equal(displayedPercent(-5, "remaining"), 100);
+  assert.equal(displayedPercent(105, "remaining"), 0);
+  assert.equal(usageDisplayLabel("used"), "used");
+  assert.equal(usageDisplayLabel("remaining"), "left");
 });
 
 test("last-updated uses observations, never failed attempt time", () => {
