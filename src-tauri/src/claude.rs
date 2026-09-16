@@ -69,6 +69,7 @@ struct FetchError {
     retry_after_seconds: Option<u64>,
     rate_limited: bool,
     credential_generation: i64,
+    auth_required: bool,
 }
 
 impl FetchError {
@@ -78,6 +79,7 @@ impl FetchError {
             retry_after_seconds: None,
             rate_limited: false,
             credential_generation: 0,
+            auth_required: false,
         }
     }
 
@@ -91,15 +93,17 @@ impl FetchError {
             retry_after_seconds,
             rate_limited: true,
             credential_generation,
+            auth_required: false,
         }
     }
 
     fn auth_rejected() -> Self {
         Self {
-            message: "Claude Code could not refresh the rejected token automatically — open Claude Code once and try again".to_string(),
+            message: CLI_LOGIN_HINT.to_string(),
             retry_after_seconds: None,
             rate_limited: false,
             credential_generation: 0,
+            auth_required: true,
         }
     }
 }
@@ -123,6 +127,53 @@ struct Credentials {
 struct Oauth {
     #[serde(rename = "accessToken")]
     access_token: String,
+    #[serde(default, rename = "expiresAt")]
+    expires_at: Option<i64>,
+}
+
+const CLI_LOGIN_HINT: &str = "Claude Code CLI sign-in needs attention. Open a terminal, run claude, then /login to sign in again. Claude Desktop sign-in does not confirm the CLI login.";
+
+fn local_login_issue(oauth: &Oauth, current_time: i64) -> Option<String> {
+    if oauth.access_token.trim().is_empty()
+        || oauth
+            .expires_at
+            .is_some_and(|at| at <= current_time.saturating_mul(1000))
+    {
+        Some(CLI_LOGIN_HINT.to_string())
+    } else {
+        None
+    }
+}
+
+#[derive(Serialize)]
+pub struct LocalLoginStatus {
+    generation: i64,
+    issue: Option<String>,
+}
+
+/// Local metadata only: safe to check during an HTTP cooldown.
+pub fn local_login_status() -> LocalLoginStatus {
+    match read_credentials_snapshot() {
+        Ok((credentials, generation)) => LocalLoginStatus {
+            generation,
+            issue: local_login_issue(&credentials.oauth, now()),
+        },
+        Err(_) => LocalLoginStatus {
+            generation: 0,
+            issue: None,
+        },
+    }
+}
+
+fn rate_limit_message(failures: u32) -> String {
+    let mut message = http_failure(
+        reqwest::StatusCode::TOO_MANY_REQUESTS,
+        "the Claude usage endpoint",
+    );
+    if failures >= 3 {
+        message.push_str(" Repeated rate limits can also occur with an invalid CLI login. Open a terminal, run claude and check /status; if sign-in has expired, run /login. Claude Desktop may still appear signed in.");
+    }
+    message
 }
 
 #[derive(Deserialize)]
@@ -601,6 +652,9 @@ pub async fn fetch() -> ProviderQuota {
     // or several wake/focus events can ask for a check, but only one request
     // reaches Anthropic and the persisted floor is rechecked after locking.
     let _fetch_guard = FETCH_LOCK.lock().await;
+    if let Some(issue) = local_login_status().issue {
+        return ProviderQuota::action_required(PROVIDER, issue);
+    }
     let current_time = now();
     let generation = claude_rate_limit::credential_generation(&path);
     let (mut rate_limit_state, credentials_changed) =
@@ -610,10 +664,7 @@ pub async fn fetch() -> ProviderQuota {
     }
 
     if let Some(remaining) = rate_limit_remaining(&rate_limit_state, current_time) {
-        let message = http_failure(
-            reqwest::StatusCode::TOO_MANY_REQUESTS,
-            "the Claude usage endpoint",
-        );
+        let message = rate_limit_message(rate_limit_state.failures);
         return cached_quota(&message)
             .unwrap_or_else(|| ProviderQuota::error(PROVIDER, message))
             .with_retry_after(Some(remaining));
@@ -632,16 +683,24 @@ pub async fn fetch() -> ProviderQuota {
             clear_rate_limit(&mut rate_limit_state, request_generation);
             quota
         }
-        Err(failure) => {
+        Err(mut failure) => {
+            if failure.auth_required {
+                return ProviderQuota::action_required(PROVIDER, failure.message);
+            }
             let retry_after_seconds = if failure.rate_limited {
                 if failure.credential_generation > 0 {
                     rate_limit_state.credential_generation = failure.credential_generation;
                 }
-                Some(record_rate_limit(
-                    &mut rate_limit_state,
-                    now(),
-                    failure.retry_after_seconds,
-                ))
+                let delay =
+                    record_rate_limit(&mut rate_limit_state, now(), failure.retry_after_seconds);
+                crate::claude_diagnostics::record(serde_json::json!({
+                    "event": "rate_limit_backoff",
+                    "failures": rate_limit_state.failures,
+                    "retry_at": rate_limit_state.until,
+                    "delay_seconds": delay,
+                }));
+                failure.message = rate_limit_message(rate_limit_state.failures);
+                Some(delay)
             } else {
                 None
             };
@@ -654,6 +713,9 @@ pub async fn fetch() -> ProviderQuota {
 
 async fn try_fetch() -> Result<(ProviderQuota, i64), FetchError> {
     let (mut creds, mut request_generation) = read_credentials_snapshot()?;
+    if local_login_issue(&creds.oauth, now()).is_some() {
+        return Err(FetchError::auth_rejected());
+    }
     let client = claude_client()
         .map_err(|error| FetchError::plain(format!("could not build HTTP client: {error}")))?;
     // First use scans the CLI on disk for its version — child processes and
@@ -671,6 +733,7 @@ async fn try_fetch() -> Result<(ProviderQuota, i64), FetchError> {
             })?;
 
         if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            crate::claude_diagnostics::response(response).await;
             if automatic_refresh_attempted || recent_refresh_failure() {
                 return Err(FetchError::auth_rejected());
             }
@@ -703,6 +766,10 @@ async fn try_fetch() -> Result<(ProviderQuota, i64), FetchError> {
                 .and_then(|value| value.to_str().ok())
                 .and_then(|value| value.parse::<u64>().ok());
             let message = http_failure(status, "the Claude usage endpoint");
+            let kind = crate::claude_diagnostics::response(response).await;
+            if kind == "authentication_error" {
+                return Err(FetchError::auth_rejected());
+            }
             return Err(if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
                 FetchError::rate_limited(message, retry_after_seconds, request_generation)
             } else {
@@ -710,6 +777,9 @@ async fn try_fetch() -> Result<(ProviderQuota, i64), FetchError> {
             });
         }
 
+        crate::claude_diagnostics::record(serde_json::json!({
+            "event": "usage_response", "status": response.status().as_u16(),
+        }));
         break response.json().await.map_err(|error| {
             FetchError::plain(format!("could not parse the usage response: {error}"))
         })?;
@@ -755,6 +825,37 @@ async fn try_fetch() -> Result<(ProviderQuota, i64), FetchError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_expiry_requires_cli_login_without_an_http_request() {
+        for expires_at in [Some(0), Some(999_000), Some(1_000_000)] {
+            let oauth = Oauth {
+                access_token: "test".into(),
+                expires_at,
+            };
+            assert!(local_login_issue(&oauth, 1000).is_some());
+        }
+        for expires_at in [None, Some(1_001_000)] {
+            let oauth = Oauth {
+                access_token: "test".into(),
+                expires_at,
+            };
+            assert!(local_login_issue(&oauth, 1000).is_none());
+        }
+        let oauth = Oauth {
+            access_token: " ".into(),
+            expires_at: None,
+        };
+        assert!(local_login_issue(&oauth, 1000).is_some());
+    }
+
+    #[test]
+    fn repeated_rate_limits_suggest_but_do_not_assert_expiry() {
+        assert!(!rate_limit_message(1).contains("/login"));
+        assert!(rate_limit_message(3).contains("if sign-in has expired"));
+        assert!(FetchError::auth_rejected().auth_required);
+        assert!(!FetchError::rate_limited("429".into(), None, 1).auth_required);
+    }
 
     #[test]
     fn names_the_plan_with_its_multiplier() {

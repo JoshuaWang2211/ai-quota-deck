@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  applyClaudeLoginStatus,
   enabledProviders,
   isUserAway,
   missedRefreshCycle,
@@ -24,6 +25,20 @@ import {
 
 const defaults = [60_000, 120_000, 300_000];
 const claude = { pollMs: 360_000 };
+
+test("Claude local login checks preserve cooldown unless credentials change", () => {
+  const state = { backoffUntil: 60000, lastAttempt: 200, failures: 3 };
+  assert.equal(applyClaudeLoginStatus(state, { generation: 10, issue: null }), null);
+  assert.equal(state.backoffUntil, 60000);
+  assert.equal(applyClaudeLoginStatus(state, { generation: 10, issue: "Run /login" }), "Run /login");
+  assert.equal(state.backoffUntil, 60000);
+  applyClaudeLoginStatus(state, { generation: 0, issue: null });
+  assert.equal(state.backoffUntil, 60000);
+  applyClaudeLoginStatus(state, { generation: 11, issue: null });
+  assert.equal(state.backoffUntil, 0);
+  assert.equal(state.lastAttempt, 0);
+  assert.equal(state.failures, 0);
+});
 
 test("Claude pauses at five idle minutes and immediately on lock", () => {
   assert.equal(isUserAway({ idle_seconds: 299, workstation_locked: false }, 300), false);

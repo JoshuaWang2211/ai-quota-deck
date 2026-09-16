@@ -219,6 +219,17 @@ Claude credentials disappear, a recent snapshot is still shown as stale; once
 that snapshot is too old, the card changes to `action_required` instead of
 incorrectly looking like a first-time setup.
 
+Since v0.3.5, `claude_login_status` reads only local credential metadata before
+the dashboard's HTTP scheduling gates. An empty access token or `expiresAt`
+at/before the current time (including zero) produces `action_required` with
+terminal → `claude` → `/login` instructions. Missing expiry metadata remains
+unknown, not expired. A changed valid credential generation clears the
+frontend schedule; the backend still checks its own generation and cooldown.
+Authentication errors take precedence over cached readings. Repeated 429s
+only suggest checking CLI sign-in: they do not prove an expired session.
+An expired access token does not prove the refresh token is revoked; the deck
+asks the CLI to handle sign-in rather than writing credentials itself.
+
 Builds that capped `Retry-After` at 15 minutes are migrated once: a still-future
 deadline is kept, the inflated failure count is dropped, and the new policy
 takes over. A successful response clears the breaker and is stored as a
@@ -233,6 +244,15 @@ provider cannot hold back unrelated cards. The global “Last updated” time
 advances only from a successful or explicitly unavailable provider observation
 (and uses a stale snapshot's original observation time), never from a
 wall-clock error response.
+
+Since v0.3.4, `provider-cache/claude-diagnostics.json` retains the latest 64
+Claude usage response/backoff events, with Unix timestamps and app version.
+Only HTTP status, parsed Retry-After seconds/date, allowlisted error types,
+and local retry decisions are saved. Bodies are read up to 16 KiB to classify
+errors; raw bodies and arbitrary headers are never persisted. Cached reads do
+not produce events. HTTP success records describe transport success, not a
+guarantee that the returned quota parsed successfully. This diagnostic does
+not change polling, refresh credentials, or clear the persisted cooldown.
 
 **Credentials stay in memory.** No token value may reach a log line, an error
 message, or a crash report.

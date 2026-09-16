@@ -1,3 +1,18 @@
+// Only a changed, valid local credential generation releases HTTP scheduling.
+export function applyClaudeLoginStatus(state, login) {
+  if (login.generation > 0) {
+    if (state.credentialGeneration != null && state.credentialGeneration !== login.generation) {
+      state.lastAttempt = 0;
+      state.backoffUntil = 0;
+      state.recheckAfter = 0;
+      state.failures = 0;
+      state.retryingRateLimit = false;
+    }
+    state.credentialGeneration = login.generation;
+  }
+  return login.issue || null;
+}
+
 export function isUserAway(activity, idlePauseSeconds) {
   return Boolean(
     activity?.workstation_locked || activity?.idle_seconds >= idlePauseSeconds,

@@ -2,6 +2,7 @@ mod activity;
 mod antigravity;
 mod bridge;
 mod claude;
+mod claude_diagnostics;
 mod claude_rate_limit;
 mod codex;
 mod gemini;
@@ -468,6 +469,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             claude_quota,
+            claude_login_status,
             codex_quota,
             gemini_quota,
             grok_quota,
@@ -489,4 +491,8 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+#[tauri::command]
+fn claude_login_status() -> claude::LocalLoginStatus {
+    claude::local_login_status()
 }

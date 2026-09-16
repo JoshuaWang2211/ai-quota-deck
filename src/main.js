@@ -1,4 +1,5 @@
 import {
+  applyClaudeLoginStatus,
   enabledProviders,
   isUserAway,
   missedRefreshCycle,
@@ -680,6 +681,18 @@ async function fetchProvider(provider, { userAway = false } = {}) {
   const now = Date.now();
 
   if (provider.pauseWhileAway && userAway) return false;
+
+  if (provider.id === "claude") {
+    try {
+      const issue = applyClaudeLoginStatus(state, await invoke("claude_login_status"));
+      if (issue) {
+        results[provider.id] = { status: "action_required", provider: "claude", message: issue };
+        return true;
+      }
+    } catch {
+      // A local metadata read failure must not bypass the HTTP cooldown.
+    }
+  }
 
   // A provider that asked us to slow down stays untouched until its backoff ends.
   if (now < state.backoffUntil) return false;

@@ -4,6 +4,21 @@ All notable changes to AI Quota Deck are documented here.
 
 ---
 
+## v0.3.5 - 2026-09-16
+
+- Detect expired/zero-expiry or empty Claude Code CLI credentials locally, even during HTTP cooldowns, and show an actionable terminal → `claude` → `/login` instruction. Claude Desktop sign-in is not proof of CLI authentication.
+- Authentication failures now request sign-in instead of hiding behind cached usage. Repeated 429 responses suggest checking CLI login without claiming every rate limit means expired authentication.
+- Changed CLI credentials release the frontend's old retry schedule; the backend remains responsible for HTTP rate limits. No credentials are modified by the new local check.
+
+---
+
+## v0.3.4 - 2026-09-16
+
+- Added bounded Claude usage diagnostics for actual HTTP responses and rate-limit backoff decisions, including parsed Retry-After values and allowlisted error types. Successful HTTP responses are recorded too; raw bodies, tokens, account data, and arbitrary headers are never saved.
+- Diagnostics retain the latest 64 events in `provider-cache/claude-diagnostics.json`. Polling and cooldown behavior are unchanged.
+
+---
+
 ## v0.3.3 - 2026-09-07
 
 - Added a persisted **Used / Remaining** quota display preference. Dashboard, Widget, and Strip now switch together, with Remaining calculated as `100% − used` to match ChatGPT Desktop's presentation.
