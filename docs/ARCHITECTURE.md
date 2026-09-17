@@ -220,10 +220,12 @@ that snapshot is too old, the card changes to `action_required` instead of
 incorrectly looking like a first-time setup.
 
 Since v0.3.5, `claude_login_status` reads only local credential metadata before
-the dashboard's HTTP scheduling gates. An empty access token or `expiresAt`
-at/before the current time (including zero) produces `action_required` with
-terminal → `claude` → `/login` instructions. Missing expiry metadata remains
-unknown, not expired. A changed valid credential generation clears the
+the dashboard's HTTP scheduling gates. Since v0.3.6, only an empty access token
+produces a local `action_required` with terminal → `claude` → `/login`
+instructions. CLI `expiresAt` metadata (including zero or a past date) is not
+proof of rejected authentication and never blocks a scheduled API request.
+A zero-usage session with no reset deadline is valid, not an auth failure.
+A changed valid credential generation clears the
 frontend schedule; the backend still checks its own generation and cooldown.
 Authentication errors take precedence over cached readings. Repeated 429s
 only suggest checking CLI sign-in: they do not prove an expired session.

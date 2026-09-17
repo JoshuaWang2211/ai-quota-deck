@@ -4,6 +4,13 @@ All notable changes to AI Quota Deck are documented here.
 
 ---
 
+## v0.3.6 - 2026-09-17
+
+- Fixed v0.3.5's local expiry check blocking usage requests indefinitely and showing an unwarranted CLI re-login prompt. CLI `expiresAt` metadata no longer determines authentication validity; actual authentication failures still ask for sign-in.
+- Added regressions for zero/past/missing expiry metadata and a zero-usage session without a reset deadline. Existing rate-limit cooldowns remain intact.
+
+---
+
 ## v0.3.5 - 2026-09-16
 
 - Detect expired/zero-expiry or empty Claude Code CLI credentials locally, even during HTTP cooldowns, and show an actionable terminal → `claude` → `/login` instruction. Claude Desktop sign-in is not proof of CLI authentication.

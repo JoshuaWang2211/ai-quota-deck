@@ -127,18 +127,15 @@ struct Credentials {
 struct Oauth {
     #[serde(rename = "accessToken")]
     access_token: String,
-    #[serde(default, rename = "expiresAt")]
-    expires_at: Option<i64>,
 }
 
 const CLI_LOGIN_HINT: &str = "Claude Code CLI sign-in needs attention. Open a terminal, run claude, then /login to sign in again. Claude Desktop sign-in does not confirm the CLI login.";
 
-fn local_login_issue(oauth: &Oauth, current_time: i64) -> Option<String> {
-    if oauth.access_token.trim().is_empty()
-        || oauth
-            .expires_at
-            .is_some_and(|at| at <= current_time.saturating_mul(1000))
-    {
+fn local_login_issue(oauth: &Oauth) -> Option<String> {
+    // expiresAt is CLI-owned metadata, not proof that the server rejects this
+    // session. Never prevent a scheduled usage request on that basis: doing so
+    // traps an otherwise usable login until the CLI rewrites its credentials.
+    if oauth.access_token.trim().is_empty() {
         Some(CLI_LOGIN_HINT.to_string())
     } else {
         None
@@ -156,7 +153,7 @@ pub fn local_login_status() -> LocalLoginStatus {
     match read_credentials_snapshot() {
         Ok((credentials, generation)) => LocalLoginStatus {
             generation,
-            issue: local_login_issue(&credentials.oauth, now()),
+            issue: local_login_issue(&credentials.oauth),
         },
         Err(_) => LocalLoginStatus {
             generation: 0,
@@ -713,7 +710,7 @@ pub async fn fetch() -> ProviderQuota {
 
 async fn try_fetch() -> Result<(ProviderQuota, i64), FetchError> {
     let (mut creds, mut request_generation) = read_credentials_snapshot()?;
-    if local_login_issue(&creds.oauth, now()).is_some() {
+    if local_login_issue(&creds.oauth).is_some() {
         return Err(FetchError::auth_rejected());
     }
     let client = claude_client()
@@ -827,26 +824,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn local_expiry_requires_cli_login_without_an_http_request() {
-        for expires_at in [Some(0), Some(999_000), Some(1_000_000)] {
-            let oauth = Oauth {
-                access_token: "test".into(),
-                expires_at,
-            };
-            assert!(local_login_issue(&oauth, 1000).is_some());
+    fn cli_expiry_metadata_cannot_block_a_usage_check() {
+        for expires_at in [
+            serde_json::Value::Null,
+            serde_json::json!(0),
+            serde_json::json!(1),
+            serde_json::json!(9999999999999_i64),
+        ] {
+            let credentials: Credentials = serde_json::from_value(serde_json::json!({
+                "claudeAiOauth": { "accessToken": "test", "expiresAt": expires_at }
+            }))
+            .unwrap();
+            assert!(local_login_issue(&credentials.oauth).is_none());
         }
-        for expires_at in [None, Some(1_001_000)] {
-            let oauth = Oauth {
-                access_token: "test".into(),
-                expires_at,
-            };
-            assert!(local_login_issue(&oauth, 1000).is_none());
-        }
+        let oauth: Oauth = serde_json::from_str(r#"{"accessToken":"test"}"#).unwrap();
+        assert!(local_login_issue(&oauth).is_none());
         let oauth = Oauth {
             access_token: " ".into(),
-            expires_at: None,
         };
-        assert!(local_login_issue(&oauth, 1000).is_some());
+        assert!(local_login_issue(&oauth).is_some());
+    }
+
+    #[test]
+    fn unused_session_without_reset_deadline_is_a_valid_usage_window() {
+        let usage: UsageResponse = serde_json::from_value(serde_json::json!({
+            "limits": [{ "kind": "session", "percent": 0.0, "resets_at": null }]
+        }))
+        .unwrap();
+        assert_eq!(usage.limits.len(), 1);
+        assert_eq!(usage.limits[0].percent, 0.0);
+        assert!(usage.limits[0].resets_at.is_none());
     }
 
     #[test]
