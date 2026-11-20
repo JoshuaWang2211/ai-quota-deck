@@ -25,7 +25,7 @@ This is the single fact that determines the app's shape.
 | Codex | `~/.codex/auth.json` (plaintext JSON) | **Yes** |
 | Grok | Browser session (primary); `~/.grok/auth.json` (fallback) | **Both** |
 | Gemini | `gemini.google.com` cookie **+ a token that only exists in a rendered page** | No |
-| Antigravity | `--csrf_token` on the IDE's language-server command line (process-local) | **Yes**, while the IDE runs |
+| Antigravity | Per-launch CSRF token from the app's hub record or the IDE server command line | **Yes**, while the IDE runs |
 | Grok Bot | Chromium-encrypted short-lived access token in `%APPDATA%\Grok Bot` | **Yes**, through Windows DPAPI |
 
 The pattern is that a vendor's **CLI or desktop client** leaves an OAuth token in
@@ -665,11 +665,8 @@ account wins.
 
 ## 7. Antigravity
 
-Antigravity is a third answer to the §1 question. The credential is neither on
-disk nor in a browser: it is a per-process CSRF token that exists only on the
-command line of the language server the IDE starts, and it changes on every
-launch. A desktop process owned by the same user can read it, so Antigravity is
-polled — but only while the IDE is running.
+Antigravity uses a per-launch CSRF token. The deck reads it from the running
+app's hub record or the older IDE server's command line on each poll.
 
 ```
 POST https://127.0.0.1:<port>/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary
@@ -684,6 +681,11 @@ X-Codeium-Csrf-Token: <csrf_token>
 on a Google AI Pro account.
 
 ### Finding the server
+
+The Windows app runs `language_server.exe` and publishes a per-user record in
+`~/.gemini/antigravity/daemon/hub_*.json`. The deck uses the advertised HTTPS
+port after checking that the record's PID belongs to a running hub process
+and owns that listener. Stale records are skipped.
 
 The IDE spawns `language_server_windows_x64.exe` (`language_server_windows_arm.exe`
 on ARM) with, among others, `--csrf_token <uuid>` and `--app_data_dir antigravity-ide`.
@@ -1120,7 +1122,7 @@ one dead card, never an empty dashboard.
    does not advance, confirm the tab is signed in and reload the companion and
    Gemini page. The card should show its age rather than claim the snapshot is live.
 8. **Antigravity asks you to open the IDE** → expected when no
-   `language_server_windows_*.exe` is running and the last snapshot is older than
+   Antigravity hub or IDE server is running and the last snapshot is older than
    24 hours (§7). Start Antigravity IDE; the card recovers on the next cycle. If
    the IDE is running and the card shows an error instead, either the IDE was
    started elevated while the deck was not, or an IDE update changed the server's

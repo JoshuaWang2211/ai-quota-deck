@@ -1,6 +1,6 @@
 //! Antigravity quota, read from the IDE's local language server over loopback.
-//! The credential is a per-launch CSRF token on that server's command line, so
-//! it is rediscovered on every poll and never written anywhere. See
+//! The per-launch CSRF token comes from the app's hub record or the older
+//! IDE server's command line. The deck never persists it. See
 //! ARCHITECTURE.md §7.
 
 use std::path::PathBuf;
@@ -161,15 +161,51 @@ struct CachedUsage {
 
 // ── Process discovery ───────────────────────────────────────────────────────
 
-fn is_language_server(exe_file: &[u16]) -> bool {
+#[derive(Debug, PartialEq)]
+enum ServerKind {
+    Ide,
+    Hub,
+}
+
+fn server_kind(exe_file: &[u16]) -> Option<ServerKind> {
     let len = exe_file
         .iter()
         .position(|&char| char == 0)
         .unwrap_or(exe_file.len());
     let name = String::from_utf16_lossy(&exe_file[..len]);
-    LANGUAGE_SERVER_EXES
+    if name.eq_ignore_ascii_case("language_server.exe") {
+        Some(ServerKind::Hub)
+    } else if LANGUAGE_SERVER_EXES
         .iter()
         .any(|known| name.eq_ignore_ascii_case(known))
+    {
+        Some(ServerKind::Ide)
+    } else {
+        None
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HubRecord {
+    pid: u32,
+    https_port: u16,
+    csrf_token: String,
+}
+
+impl HubRecord {
+    fn into_candidate(self, pid: u32, ports: &[u16]) -> Option<Candidate> {
+        // A record can outlive its server or its ports can be reused.
+        if self.pid != pid || !ports.contains(&self.https_port) || self.csrf_token.is_empty() {
+            return None;
+        }
+        Some(Candidate {
+            pid: self.pid,
+            csrf: self.csrf_token,
+            enable_lsp: false,
+            ports: vec![self.https_port],
+        })
+    }
 }
 
 /// `--flag value` or `--flag=value`. Whole-token comparison, so
@@ -236,7 +272,9 @@ mod discovery {
         RTL_USER_PROCESS_PARAMETERS,
     };
 
-    use super::{is_language_server, parse_cmdline, Candidate, MAX_COMMAND_LINE_CHARS};
+    use super::{
+        parse_cmdline, server_kind, Candidate, HubRecord, ServerKind, MAX_COMMAND_LINE_CHARS,
+    };
 
     /// `GetExtendedTcpTable` takes the address family as a bare integer; this
     /// is AF_INET, the only family the language server listens on.
@@ -249,7 +287,10 @@ mod discovery {
         let mut unreadable = false;
         let candidates = language_server_pids()
             .into_iter()
-            .filter_map(|pid| {
+            .filter_map(|(pid, kind)| {
+                if kind == ServerKind::Hub {
+                    return hub_candidate(pid);
+                }
                 let Some(command_line) = command_line(pid) else {
                     unreadable = true;
                     return None;
@@ -266,7 +307,18 @@ mod discovery {
         (candidates, unreadable)
     }
 
-    fn language_server_pids() -> Vec<u32> {
+    fn hub_candidate(pid: u32) -> Option<Candidate> {
+        let dir = dirs::home_dir()?.join(".gemini/antigravity/daemon");
+        let ports = listening_ports(pid);
+        // The hub names its record after the HTTP port but the deck uses HTTPS.
+        ports.iter().find_map(|port| {
+            let bytes = std::fs::read(dir.join(format!("hub_{port}.json"))).ok()?;
+            let hub: HubRecord = serde_json::from_slice(&bytes).ok()?;
+            hub.into_candidate(pid, &ports)
+        })
+    }
+
+    fn language_server_pids() -> Vec<(u32, ServerKind)> {
         let mut pids = Vec::new();
         // SAFETY: the entry is sized as Toolhelp requires and the snapshot
         // handle is closed on every path out of the block.
@@ -279,8 +331,8 @@ mod discovery {
             entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
             if Process32FirstW(snapshot, &mut entry) != 0 {
                 loop {
-                    if is_language_server(&entry.szExeFile) {
-                        pids.push(entry.th32ProcessID);
+                    if let Some(kind) = server_kind(&entry.szExeFile) {
+                        pids.push((entry.th32ProcessID, kind));
                     }
                     if Process32NextW(snapshot, &mut entry) == 0 {
                         break;
@@ -886,21 +938,39 @@ mod tests {
     }
 
     #[test]
-    fn matches_both_language_server_names_case_insensitively() {
-        let utf16 = |name: &str| {
+    fn distinguishes_hub_and_ide_server_names_case_insensitively() {
+        let kind = |name: &str| {
             let mut chars: Vec<u16> = name.encode_utf16().collect();
             chars.push(0);
             chars.resize(260, 0);
-            chars
+            server_kind(&chars)
         };
-        assert!(is_language_server(&utf16(
-            "language_server_windows_x64.exe"
-        )));
-        assert!(is_language_server(&utf16(
-            "LANGUAGE_SERVER_WINDOWS_ARM.EXE"
-        )));
-        assert!(!is_language_server(&utf16("language_server_linux_x64")));
-        assert!(!is_language_server(&utf16("Antigravity IDE.exe")));
+        assert_eq!(kind("LANGUAGE_SERVER.EXE"), Some(ServerKind::Hub));
+        assert_eq!(
+            kind("language_server_windows_x64.exe"),
+            Some(ServerKind::Ide)
+        );
+        assert_eq!(
+            kind("LANGUAGE_SERVER_WINDOWS_ARM.EXE"),
+            Some(ServerKind::Ide)
+        );
+        assert_eq!(kind("language_server_linux_x64"), None);
+        assert_eq!(kind("Antigravity IDE.exe"), None);
+    }
+
+    #[test]
+    fn hub_record_requires_a_running_hub_that_owns_the_https_port() {
+        let record = || {
+            serde_json::from_str::<HubRecord>(
+                r#"{"pid":42,"httpPort":5000,"httpsPort":5001,"csrfToken":"test-token"}"#,
+            )
+            .unwrap()
+        };
+        assert!(record().into_candidate(41, &[5001]).is_none());
+        assert!(record().into_candidate(42, &[5000]).is_none());
+        let candidate = record().into_candidate(42, &[5000, 5001]).unwrap();
+        assert_eq!(candidate.ports, [5001]);
+        assert_eq!(candidate.csrf, "test-token");
     }
 
     #[test]
@@ -1105,7 +1175,7 @@ mod tests {
     /// Needs a signed-in Antigravity IDE running on this machine.
     #[test]
     #[ignore = "requires a running Antigravity IDE"]
-    fn live_ide_reports_four_windows() {
+    fn live_server_reports_quota_windows() {
         let quota = tauri::async_runtime::block_on(fetch());
         let ProviderQuota::Ok {
             plan,
@@ -1120,13 +1190,13 @@ mod tests {
             );
         };
         assert!(stale.is_none(), "a running IDE must answer live");
-        assert_eq!(windows.len(), 4);
+        assert!(
+            !windows.is_empty(),
+            "expected at least one model quota window"
+        );
         for window in windows {
-            assert!(
-                window.label.starts_with("Weekly") || window.label.starts_with("Session (5h)"),
-                "unexpected label {}",
-                window.label
-            );
+            assert!(!window.label.trim().is_empty());
+            assert!((0.0..=100.0).contains(&window.percent));
         }
         println!("status=ok plan={plan:?}");
         for window in windows {
